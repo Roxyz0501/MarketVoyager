@@ -25,6 +25,9 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     private (uint Id, string Name) world;
     private ulong character;
     private ulong boardId;
+    private const float BoardInteractionDistance = 2f;
+    private int boardOpenAttempts;
+    private DateTime nextBoardInteraction;
     private uint sourceWorld;
     private bool evaluated;
     public int? OfferCount { get; private set; }
@@ -91,7 +94,8 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
 
     private void Set(Phase phase, int seconds = 30)
     {
-        State = phase; deadline = DateTime.UtcNow.AddSeconds(seconds); next = DateTime.UtcNow.AddSeconds(1);
+        State = phase; deadline = DateTime.UtcNow.AddSeconds(seconds);
+        next = DateTime.UtcNow.AddMilliseconds(phase is >= Phase.Search and <= Phase.Result ? 100 : 1000);
     }
     private void NextWorld()
     {
@@ -135,7 +139,8 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
             catch (Exception ex) { log.Warning(ex, "Stopped purchase reconciliation failed"); next = DateTime.UtcNow.AddSeconds(30); }
             return;
         }
-        next = DateTime.UtcNow.AddMilliseconds(250);
+        // Faster local observation while buying; UI readiness still gates every action.
+        next = DateTime.UtcNow.AddMilliseconds(State is >= Phase.Search and <= Phase.Result ? 100 : 250);
         try
         {
             if (pause.Enter(State is Phase.Search or Phase.Select or Phase.Listings or Phase.SellPick,
@@ -197,17 +202,29 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                 travel.PollMove();
                 var board = objects.FirstOrDefault(x => x.GameObjectId == boardId);
                 if (board == null || objects.LocalPlayer == null) throw new InvalidOperationException("Board disappeared");
-                if (Vector3.Distance(objects.LocalPlayer.Position, board.Position) > 3) return;
+                if (Vector3.Distance(objects.LocalPlayer.Position, board.Position) > BoardInteractionDistance) return;
                 travel.StopMove(); ownsMovement = false;
-                TargetSystem.Instance()->InteractWithObject((NativeObject*)board.Address);
+                boardOpenAttempts = 0;
+                nextBoardInteraction = DateTime.UtcNow.AddSeconds(1);
                 Set(Phase.Open); return;
             }
             if (State == Phase.Open)
             {
-                if (market.Visible("ItemSearch")) NextItem(false);
+                if (market.Visible("ItemSearch")) { NextItem(false); return; }
+                // Let walking settle, then retry only this board at a bounded rate.
+                // Keep the original Open deadline; an inaccessible board cannot loop forever.
+                if (boardOpenAttempts >= 3 || DateTime.UtcNow < nextBoardInteraction) return;
+                var board = objects.FirstOrDefault(x => x.GameObjectId == boardId);
+                if (board == null || objects.LocalPlayer == null) throw new InvalidOperationException("Board disappeared before opening");
+                if (!board.IsTargetable || Vector3.Distance(objects.LocalPlayer.Position, board.Position) > BoardInteractionDistance) return;
+                boardOpenAttempts++;
+                nextBoardInteraction = DateTime.UtcNow.AddSeconds(2);
+                TargetSystem.Instance()->InteractWithObject((NativeObject*)board.Address);
                 return;
             }
             if (State >= Phase.SellWalk) { TickSale(); return; }
+            if (State == Phase.Result) return; // Inventory reconciliation above owns completion.
+            if (State == Phase.Listings && market.Visible("SelectYesno")) return;
             if (State == Phase.Listings && config.Pending == null && CheckSpace()) return;
             if (index >= rules.Count) throw new InvalidOperationException("Invalid item cursor");
             var rule = rules[index];
@@ -281,7 +298,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                         config.Pending.Submitted = true; save();
                     });
                     if (action == 2) { if (State == Phase.Result) Set(Phase.Result, 20); }
-                    else { State = Phase.Confirm; next = DateTime.UtcNow.AddSeconds(1); }
+                    else { State = Phase.Confirm; next = DateTime.UtcNow.AddMilliseconds(action == 1 ? 250 : 100); }
                     break;
             }
         }
@@ -290,15 +307,10 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     public void Purchased(uint itemId, uint quantity)
     {
         if (State != Phase.Result || config.Pending == null || player.ContentId != character || player.CurrentWorld.RowId != world.Id ||
-            itemId % 1_000_000 != offer.Item || quantity != offer.Quantity || !market.Matches(offer)) return;
-        try
-        {
-            Sales.Credit(rules[index], character, offer.Hq, quantity);
-            skipSaleUntilPurchase = false;
-            config.Pending = null; save(); Set(Phase.Listings);
-            next = DateTime.UtcNow.AddSeconds(2);
-        }
-        catch (Exception ex) { Fail(ex); }
+            itemId % 1_000_000 != offer.Item || quantity != offer.Quantity) return;
+        // A receipt can arrive before the inventory update. Wake the existing reconciliation
+        // instead of taking the next purchase's baseline from stale inventory.
+        next = DateTime.UtcNow;
     }
     private bool ReconcileInventory()
     {
@@ -311,7 +323,6 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         Sales.Credit(rules[index], pending.CharacterId, pending.Hq, pending.Quantity);
         skipSaleUntilPurchase = false;
         config.Pending = null; save(); Set(market.Visible("ItemSearchResult") ? Phase.Listings : Phase.Search);
-        next = DateTime.UtcNow.AddSeconds(2);
         return true;
     }
     public bool ResolveStoppedPurchase(bool confirmedNotPurchased, bool countUnresolved)

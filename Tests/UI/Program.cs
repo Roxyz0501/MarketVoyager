@@ -58,6 +58,29 @@ unsafe class Program
    runnerType.GetMethod("TogglePause")!.Invoke(runner,null);
    Check(!(bool)runnerType.GetProperty("IsPaused")!.GetValue(runner)!,"production runner resume clears pause");
    runnerType.GetMethod("Stop")!.Invoke(runner,[Enum.Parse(state.PropertyType,"Stopped")]);
+   var setPhase=runnerType.GetMethod("Set",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   var nextField=runnerType.GetField("next",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   foreach(var phase in new[]{"Search","Select","Listings","Confirm","Result"}) {
+    var began=DateTime.UtcNow;
+    setPhase.Invoke(runner,[Enum.Parse(state.PropertyType,phase),20]);
+    var scheduled=(DateTime)nextField.GetValue(runner)!;
+    Check(scheduled>=began.AddMilliseconds(100) && scheduled<=DateTime.UtcNow.AddMilliseconds(110),"ready purchase phases use a short scheduled delay");
+    var limit=(DateTime)runnerType.GetField("deadline",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(runner)!;
+    Check(limit>=began.AddSeconds(20),"faster checks preserve transaction timeout");
+   }
+   var receiptRule=new BuyRule {ItemId=42,QuantityLimit=10,Purchased=2};
+   var reservation=new Reservation {RuleId=receiptRule.Id,ItemId=42,Quantity=5,InventoryBefore=10,Submitted=true};
+   Dummy.Config.Pending=reservation;
+   runnerType.GetField("offer",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(runner,new Offer(123,42,100,5,25,false));
+   int receiptSaves=Dummy.Saves;
+   nextField.SetValue(runner,DateTime.UtcNow.AddHours(1));
+   runnerType.GetMethod("Purchased")!.Invoke(runner,[42u,5u]);
+   Check(ReferenceEquals(Dummy.Config.Pending,reservation) && receiptRule.Purchased==2 && Dummy.Saves==receiptSaves,
+       "early receipt preserves pending transaction until inventory changes, without credit or save");
+   Check(state.GetValue(runner)!.ToString()=="Result" && (DateTime)nextField.GetValue(runner)!<=DateTime.UtcNow,
+       "receipt wakes inventory check without advancing to another purchase");
+   Dummy.Config.Pending=null;
+   runnerType.GetMethod("Stop")!.Invoke(runner,[Enum.Parse(state.PropertyType,"Stopped")]);
    runnerType.GetField("rules",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(runner,new List<BuyRule>{new(){ItemId=5333,QuantityLimit=10},new(){ItemId=4,QuantityLimit=10}});
    var retryField=runnerType.GetField("listingRetries",BindingFlags.Instance|BindingFlags.NonPublic)!;
    retryField.SetValue(runner,3);
