@@ -1,4 +1,5 @@
 using Dalamud.Bindings.ImGui;
+using System.Numerics;
 
 namespace MarketVoyager;
 
@@ -17,6 +18,8 @@ public sealed partial class Plugin
     private bool batchTax, npcMode, setPrice = true, setQuantity = true, setQuality = true;
     private BatchResult? batchMessage;
     private const int PageSize = 30;
+    private Vector2 listOptionsAnchor;
+    private Vector2 listOptionsPosition;
     private void RefreshCatalogue()
     {
         filtered = Catalog.Filter(catalogue, query, category, minimumNpc, (CatalogSort)sort);
@@ -26,7 +29,13 @@ public sealed partial class Plugin
         batchTax, npcMode, margin, !editing || setPrice, !editing || setQuantity, !editing || setQuality);
     private void ApplyResult(BatchResult result) { batchMessage = result; if (result.Changed > 0) Save(); }
     private bool EditingLocked => runner.Running;
-    private bool LedgerLocked(Guid id) => config.Pending?.RuleId == id || config.PendingSale?.RuleId == id;
+    private bool LedgerLocked(Guid id) => config.HasPending(id);
+    private void RemoveRows(ShoppingList list, IReadOnlySet<Guid> ids)
+    {
+        if (EditingLocked) return;
+        if (config.RemoveRules(list, ids) > 0) Save();
+        selectedRules.ExceptWith(ids);
+    }
     private void DrawTransport()
     {
         ImGui.BeginDisabled(EditingLocked || config.Pending != null || config.PendingSale != null || !travel.Ready || config.Lists[config.Selected].Items.Count == 0);
@@ -39,6 +48,11 @@ public sealed partial class Plugin
         ImGui.TextWrapped(T(runner.IsPaused ? "Paused" : runner.PauseRequested ? "Pausing" : runner.State.ToString()));
         if (runner.PauseRequested && ImGui.IsItemHovered()) ImGui.SetTooltip(T("PauseHelp"));
         if (runner.CurrentWorld.Length > 0) { ImGui.SameLine(); ImGui.TextUnformatted(runner.CurrentWorld); }
+        if (runner.OfferCount is { } count)
+        {
+            var name = catalogueById.TryGetValue(runner.EvaluatedItem, out var item) ? item.Name : runner.EvaluatedItem.ToString();
+            ImGui.TextWrapped($"{T("LastEvaluation")} — {name}: {T("Offers")} {count} / {T("Candidates")} {runner.CandidateCount}");
+        }
         ImGui.Separator();
     }
     private void DrawLists()
@@ -55,11 +69,14 @@ public sealed partial class Plugin
         ImGui.SameLine();
         if (config.Lists.Count < 50 && ImGui.Button(T("AddList") + "###AddList"))
         { config.Lists.Add(new() { Name = $"{T("Lists")} {config.Lists.Count + 1}" }); config.Selected = config.Lists.Count - 1; selectedRules.Clear(); rulePage = 0; Save(); }
-        ImGui.SameLine(); if (ImGui.Button(T("ListOptions") + "###ListOptions")) ImGui.OpenPopup("ListOptionsPopup");
+        ImGui.SameLine(); if (ImGui.Button(T("ListOptions") + "###ListOptions"))
+        {
+            listOptionsAnchor = new(ImGui.GetItemRectMin().X, ImGui.GetItemRectMax().Y + ImGui.GetStyle().ItemSpacing.Y);
+            ImGui.OpenPopup("ListOptionsPopup");
+        }
         var list = config.Lists[config.Selected];
         ImGui.SameLine(); ImGui.TextDisabled($"{list.Items.Count} / {Catalog.ListCapacity}");
-        ImGui.SetNextWindowSize(new(520, 0), ImGuiCond.Appearing);
-        if (ImGui.BeginPopup("ListOptionsPopup")) { DrawListOptions(list); ImGui.EndPopup(); }
+        DrawListOptionsPopup(list);
         if (batchMessage is { } message)
             ImGui.TextWrapped(message.Error != null ? T(message.Error) : $"{T("Changed")}: {message.Changed} / {T("Skipped")}: {message.Skipped}");
         if (ImGui.BeginTabBar("ListViews"))
@@ -69,6 +86,21 @@ public sealed partial class Plugin
             ImGui.EndTabBar();
         }
         ImGui.EndDisabled();
+    }
+    private void DrawListOptionsPopup(ShoppingList list)
+    {
+        if (!ImGui.IsPopupOpen("ListOptionsPopup")) return;
+        var viewport = ImGui.GetMainViewport();
+        var width = Math.Min(520, viewport.WorkSize.X - 16);
+        var anchor = Vector2.Clamp(listOptionsAnchor, viewport.WorkPos + new Vector2(8),
+            viewport.WorkPos + new Vector2(Math.Max(8, viewport.WorkSize.X - width - 8), Math.Max(8, viewport.WorkSize.Y - 320)));
+        ImGui.SetNextWindowPos(anchor, ImGuiCond.Always);
+        ImGui.SetNextWindowSize(new(width, 0), ImGuiCond.Always);
+        if (ImGui.BeginPopup("ListOptionsPopup", ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoSavedSettings))
+        {
+            listOptionsPosition = ImGui.GetWindowPos();
+            DrawListOptions(list); ImGui.EndPopup();
+        }
     }
     private void DrawListOptions(ShoppingList list)
     {
@@ -175,8 +207,8 @@ public sealed partial class Plugin
             if (ImGui.MenuItem(T("SetNpc"))) { ImGui.CloseCurrentPopup(); openNpcBatch = true; }
             ImGui.BeginDisabled(selectedRules.Any(LedgerLocked));
             if (ImGui.MenuItem(T("ResetSelected"))) { if (Catalog.Reset(list, selectedRules) > 0) Save(); }
-            if (ImGui.MenuItem(T("RemoveSelected"))) { list.Items.RemoveAll(x => selectedRules.Contains(x.Id)); selectedRules.Clear(); Save(); }
             ImGui.EndDisabled();
+            if (ImGui.MenuItem(T("RemoveSelected"))) RemoveRows(list, selectedRules.ToHashSet());
             ImGui.EndDisabled(); ImGui.Separator();
             ImGui.BeginDisabled(list.Items.Any(x => LedgerLocked(x.Id)));
             if (ImGui.MenuItem(T("Reset"))) { if (Catalog.Reset(list, list.Items.Select(x => x.Id).ToHashSet()) > 0) Save(); }
@@ -272,15 +304,15 @@ public sealed partial class Plugin
                     ImGui.Separator();
                     ImGui.BeginDisabled(LedgerLocked(rule.Id));
                     if (ImGui.MenuItem(T("Reset"))) { if (Catalog.Reset(list, new HashSet<Guid> { rule.Id }) > 0) Save(); }
-                    if (ImGui.MenuItem(T("Remove"))) remove = rule.Id;
                     ImGui.EndDisabled();
+                    if (ImGui.MenuItem(T("Remove"))) remove = rule.Id;
                     ImGui.EndPopup();
                 }
                 ImGui.PopID();
             }
             ImGui.EndTable();
         }
-        if (remove is { } id) { list.Items.RemoveAll(x => x.Id == id); selectedRules.Remove(id); Save(); }
+        if (remove is { } id) RemoveRows(list, new HashSet<Guid> { id });
     }
     private bool openBatch, openNpcBatch, batchAll;
     private IReadOnlySet<Guid> BatchTargets(ShoppingList list) =>

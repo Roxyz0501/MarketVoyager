@@ -18,3 +18,5 @@
 - [Gil Beacon](https://github.com/Roxyz0501/GilBeacon), Roxyz0501, Apache-2.0: its recorded read-only investigation established that the market's WaitingForListings flag can remain set after rows are populated. Referenced that observation when implementing independent readiness checks; no source code copied.
 
 - [ECommons](https://github.com/NightmareXIV/ECommons), NightmareXIV contributors, MIT: consulted its addon-button event-dispatch behavior. No code copied or dependency added. Market Voyager keeps validation of registered ownership and enabled state.
+
+Lifestream gateway return (1.0.1.4): references the public `GetActiveAetheryte` IPC and provider route behavior to wait for Limsa main aetheryte recognition before requesting a world change. Provider source: https://github.com/NightmareXIV/Lifestream/blob/main/Lifestream/IPC/IPCProvider.cs . No provider implementation copied.

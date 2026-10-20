@@ -85,18 +85,58 @@ unsafe class Program
    var pendingRule=Dummy.Config.Lists[0].Items[0];
    Dummy.Config.Pending=new(){RuleId=pendingRule.Id,ItemId=pendingRule.ItemId,Quantity=5,InventoryBefore=10};
    Check(!(bool)type.GetProperty("EditingLocked",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)!,"stopped pending purchase does not lock settings");
-   Check((bool)type.GetMethod("LedgerLocked",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,[pendingRule.Id])!,"pending row deletion/reset remains protected");
+   Check((bool)type.GetMethod("LedgerLocked",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,[pendingRule.Id])!,"pending row counter reset remains protected");
    Check(!(bool)type.GetMethod("LedgerLocked",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,[Dummy.Config.Lists[0].Items[1].Id])!,"unrelated row can be deleted/reset");
    foreach(var language in new[]{"ja","en","de","fr","ko","zh-Hans","zh-Hant"}) {
     Dummy.Config.Language=language; Frame(); Frame();
     Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,language+"-stopped-pending.bmp"));
    }
    Check(Dummy.Saves==saves,"pending recovery UI does not save without action");
-   Dummy.Config.Pending=null;
+   var remove = type.GetMethod("RemoveRows",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   var ids = new HashSet<Guid> { pendingRule.Id, Dummy.Config.Lists[0].Items[1].Id };
+   remove.Invoke(plugin,[Dummy.Config.Lists[0], ids]);
+   Check(Dummy.Config.Lists[0].Items.Count==43 && Dummy.Config.DetachedRules.Count==1,"bulk removal deletes visible rows and retains only unresolved ledger");
+   Check(ReferenceEquals(Dummy.Config.FindRule(pendingRule.Id),pendingRule) && Dummy.Config.Pending!=null,"deleted pending rule remains resolvable without discarding reservation");
+   var restored=System.Text.Json.JsonSerializer.Deserialize<Configuration>(System.Text.Json.JsonSerializer.Serialize(Dummy.Config))!;
+   Check(restored.FindRule(pendingRule.Id)!=null && restored.Pending?.RuleId==pendingRule.Id,"deleted pending record survives restart");
+   Dummy.Config.PendingSale=new(){RuleId=pendingRule.Id};
+   Dummy.Config.Pending=null; Dummy.Config.PruneDetached();
+   Check(Dummy.Config.DetachedRules.Count==1,"sale reservation also retains deleted ledger");
+   Dummy.Config.PendingSale=null; Dummy.Config.PruneDetached();
+   Check(Dummy.Config.DetachedRules.Count==0,"resolved deleted records do not accumulate");
+   state.SetValue(runner,Enum.Parse(state.PropertyType,"Listings"));
+   int countBefore=Dummy.Config.Lists[0].Items.Count;
+   remove.Invoke(plugin,[Dummy.Config.Lists[0],new HashSet<Guid>{Dummy.Config.Lists[0].Items[0].Id}]);
+   Check(Dummy.Config.Lists[0].Items.Count==countBefore,"running list cannot be deleted");
+   runnerType.GetMethod("Stop")!.Invoke(runner,[Enum.Parse(state.PropertyType,"Stopped")]);
+   Dummy.Config.Language="ja";
+   var anchorField=type.GetField("listOptionsAnchor",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   var positionField=type.GetField("listOptionsPosition",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   anchorField.SetValue(plugin,new System.Numerics.Vector2(1100,140));
+   System.Numerics.Vector2? stable=null;
+   for(int i=0;i<60;i++) {
+    ImGui.NewFrame(); ImGui.SetNextWindowPos(new(20,20)); ImGui.Begin("Popup stability QA");
+    if(i==0) ImGui.OpenPopup("ListOptionsPopup");
+    using(var font=Dummy.Push()) type.GetMethod("DrawListOptionsPopup",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,[Dummy.Config.Lists[0]]);
+    var pos=(System.Numerics.Vector2)positionField.GetValue(plugin)!;
+    if(i==3) stable=pos;
+    if(i>3) Check(pos==stable,"list settings popup remains fixed on every frame");
+    ImGui.End(); ImGui.Render();
+   }
+   Check(stable is { X: > 0, Y: > 0 },"popup was actually laid out");
+   Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,"ja-list-options-stable.bmp"));
+   var travel=type.GetField("travel",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)!;
+   var change=travel.GetType().GetMethod("ChangeWorld")!;
+   bool refused=false;
+   try { change.Invoke(travel,["TestWorld"]); } catch(TargetInvocationException ex) when(ex.InnerException is InvalidOperationException) { refused=true; }
+   Check(refused && Dummy.TravelRequests==0,"world request rejected until Lifestream recognizes Limsa aetheryte");
+   Dummy.ActiveAetheryte=8; change.Invoke(travel,["TestWorld"]);
+   Check(Dummy.TravelRequests==1 && Dummy.TravelArgs is {Length:7} && Equals(Dummy.TravelArgs[1],false) && Equals(Dummy.TravelArgs[6],false),
+       "arrival permits only aetheryte world route, with no return teleport");
   }
   Check(Dummy.Subscriptions==0,"Unsubscribes events"); Check(Dummy.Commands.Count==0,"Removes command");
   ImGui.DestroyContext(); foreach(var pin in Dummy.Pins) pin.Free();
-  Console.WriteLine($"PASS {checks} UI/glyph/lifecycle checks; 38 background renders.");
+  Console.WriteLine($"PASS {checks} UI/glyph/lifecycle checks; 39 background renders.");
  }
 }
 public unsafe class Dummy:DispatchProxy
@@ -108,6 +148,10 @@ public unsafe class Dummy:DispatchProxy
  public static readonly List<ImFontPtr> Fonts=[];
  public static readonly List<GCHandle> Pins=[];
  private ImFontPtr font;
+ private string ipcName="";
+ public static uint ActiveAetheryte;
+ public static int TravelRequests;
+ public static object?[]? TravelArgs;
  public static IDisposable Push() { ImGui.PushFont(Fonts[0]); return new Pop(); }
  protected override object? Invoke(MethodInfo? method,object?[]? args)
  {
@@ -119,6 +163,16 @@ public unsafe class Dummy:DispatchProxy
    case "SavePluginConfig": Saves++; return null;
    case "get_UiLanguage": return "en";
    case "GetOrCreateData": return new HashSet<string>();
+   case "GetIpcSubscriber":
+    var ipc=DispatchProxy.Create(method.ReturnType,typeof(Dummy)); ((Dummy)ipc).ipcName=(string)args![0]!; return ipc;
+   case "InvokeFunc":
+    if(ipcName=="Lifestream.IsBusy") return false;
+    if(ipcName=="Lifestream.GetActiveAetheryte") return ActiveAetheryte;
+    if(ipcName=="Lifestream.GetWorldChangeAetheryteByTerritoryType") return (int?)1;
+    break;
+   case "InvokeAction":
+    if(ipcName=="Lifestream.TPAndChangeWorld") { TravelRequests++; TravelArgs=args; }
+    return null;
    case "GetExcelSheet": return typeof(GameData).GetMethods().First(x=>x.Name=="GetExcelSheet" && x.IsGenericMethod).MakeGenericMethod(method.GetGenericArguments()).Invoke(Game,[null,null]);
    case "get_InstalledPlugins": return Array.CreateInstance(method.ReturnType.GetGenericArguments()[0],0);
    case "AddHandler": return Commands.TryAdd((string)args![0]!, (CommandInfo)args[1]!);

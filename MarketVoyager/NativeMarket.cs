@@ -23,7 +23,10 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
             $"inputPresent={a != null && a->SearchTextInput != null}, " +
             $"inputHasText={a != null && a->SearchTextInput != null && a->SearchTextInput->EvaluatedString.StringLength > 0}, " +
             $"resultVisible={Visible("ItemSearchResult")}, rows={(result == null || result->Results == null ? -1 : result->Results->ListLength)}, " +
-            $"listingCount={(proxy == null ? 0 : proxy->ListingCount)}, waiting={proxy != null && proxy->WaitingForListings}";
+            $"listingCount={(proxy == null ? 0 : proxy->ListingCount)}, waiting={proxy != null && proxy->WaitingForListings}, " +
+            $"searchItem={(proxy == null ? 0 : proxy->SearchItemId)}, " +
+            $"updatePending={result != null && result->Results != null && result->Results->IsUpdatePending}, " +
+            $"scrollPending={result != null && result->Results != null && result->Results->IsScrollRefreshPending}";
     }
 
     // The input widget and its actual registered button event are used; no request packet API.
@@ -31,6 +34,7 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
     {
         var a = gui.GetAddonByName<AddonItemSearch>("ItemSearch");
         if (!CanEnterSearch(a)) return false;
+        if (!FocusInput(&a->AtkUnitBase, a->SearchTextInput)) return false;
         // Mode describes the previous result/category, not whether the name input is usable.
         // The normal search button owns the transition into name-search mode.
         if (a->SearchTextInput->EvaluatedString.ToString() != name)
@@ -45,6 +49,15 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
             return false; // Observe the callback's ordinary button update on the next tick.
         }
         return Click(&a->AtkUnitBase, a->SearchButton);
+    }
+    internal static bool FocusInput(AtkUnitBase* owner, AtkComponentTextInput* input)
+    {
+        if (owner == null || input == null || input->OwnerAddon != owner ||
+            input->OwnerNode == null || !input->Enabled || input->CollisionNode == null) return false;
+        if (input->IsActive) return true;
+        owner->SetFocusNode(&input->CollisionNode->AtkResNode, true);
+        // Allow the ordinary focus event and widget activation to finish before typing.
+        return false;
     }
     internal static bool NotifyTextChanged(AtkUnitBase* owner, AtkComponentTextInput* input)
     {
@@ -81,6 +94,13 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
             if (proxy->Listings[i].ItemId != item) return false;
         return true;
     }
+    public bool ResultsOpenFor(uint item)
+    {
+        if (!Visible("ItemSearchResult")) return false;
+        return ResultsMatch(AgentItemSearch.Instance(), Proxy, item);
+    }
+    internal static bool ResultsMatch(AgentItemSearch* agent, InfoProxyItemSearch* proxy, uint item) =>
+        item != 0 && agent != null && proxy != null && agent->ResultItemId == item && proxy->SearchItemId == item;
     public List<Offer> Read(uint item, ulong owner)
     {
         List<Offer> offers = [];
@@ -93,7 +113,7 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
         }
         return offers;
     }
-    public bool SelectOffer(Offer offer, ulong owner)
+    public bool SelectOffer(Offer offer, ulong owner, Action? beforeSelection = null)
     {
         if (Visible("SelectYesno") || !Read(offer.Item, owner).Contains(offer)) return false;
         var a = gui.GetAddonByName<AddonItemSearchResult>("ItemSearchResult");
@@ -101,6 +121,7 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
         for (int i = 0; i < Math.Min(Proxy->ListingCount, 100); i++)
             if (Proxy->Listings[i].ListingId == offer.Id && i < a->Results->GetItemCount())
             {
+                beforeSelection?.Invoke();
                 a->Results->DispatchItemEvent(i, AtkEventType.ListItemClick);
                 return true;
             }

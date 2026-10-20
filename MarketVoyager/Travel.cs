@@ -9,18 +9,20 @@ internal sealed class Travel(IDalamudPluginInterface pi)
     public bool Loaded(string name) => pi.InstalledPlugins.Any(x => x.InternalName == name && x.IsLoaded);
     public bool Ready => Loaded("Lifestream") && Loaded("vnavmesh");
     public bool Busy => pi.GetIpcSubscriber<bool>("Lifestream.IsBusy").InvokeFunc();
+    public bool AtLimsaAetheryte => pi.GetIpcSubscriber<uint>("Lifestream.GetActiveAetheryte").InvokeFunc() == 8;
     public bool CanVisit(string name) =>
         pi.GetIpcSubscriber<string, bool>("Lifestream.CanVisitSameDC").InvokeFunc(name) ||
         pi.GetIpcSubscriber<string, bool>("Lifestream.CanVisitCrossDC").InvokeFunc(name);
     public void ChangeWorld(string name)
     {
         if (Busy) throw new InvalidOperationException("Lifestream is busy");
+        if (!AtLimsaAetheryte) throw new InvalidOperationException("Walk to the Limsa main aetheryte before changing world");
         var gateway = pi.GetIpcSubscriber<uint, int?>("Lifestream.GetWorldChangeAetheryteByTerritoryType").InvokeFunc(129);
         if (gateway is null) throw new InvalidOperationException("Limsa gateway unavailable");
         // This tour only includes worlds reachable through the aetheryte within the region.
         // Never request the legacy logout/character-selection DC transfer route.
         pi.GetIpcSubscriber<string, bool, string, bool, int?, bool?, bool?, object>("Lifestream.TPAndChangeWorld")
-            .InvokeAction(name, false, "", true, gateway, false, true);
+            .InvokeAction(name, false, "", true, gateway, false, false);
     }
     public bool MeshReady => pi.GetIpcSubscriber<bool>("vnavmesh.Nav.IsReady").InvokeFunc();
     public bool Move(Vector3 origin, Vector3 destination)

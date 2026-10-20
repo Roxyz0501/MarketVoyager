@@ -8,7 +8,7 @@ using NativeObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace MarketVoyager;
 
-internal enum Phase { Idle, Travel, Walk, Open, Search, Select, Listings, Confirm, Result, SellWalk, SellOpen, SellPick, SellMenu, SellResult, Done, Stopped, Error }
+internal enum Phase { Idle, WalkToAetheryte, Travel, Walk, Open, Search, Select, Listings, Confirm, Result, SellWalk, SellOpen, SellPick, SellMenu, SellResult, Done, Stopped, Error }
 
 internal sealed unsafe class Runner(Configuration config, Travel travel, NativeMarket market,
     NativeSales sales, IDataManager data, IObjectTable objects, IPlayerState player, IClientState client,
@@ -25,6 +25,11 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     private (uint Id, string Name) world;
     private ulong character;
     private ulong boardId;
+    private uint sourceWorld;
+    private bool evaluated;
+    public int? OfferCount { get; private set; }
+    public int CandidateCount { get; private set; }
+    public uint EvaluatedItem { get; private set; }
     private bool ownsTravel;
     private bool ownsMovement;
     private Offer offer;
@@ -42,7 +47,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         next = DateTime.UtcNow;
     }
     public Phase State { get; private set; }
-    public bool Running => State is >= Phase.Travel and <= Phase.SellResult;
+    public bool Running => State is >= Phase.WalkToAetheryte and <= Phase.SellResult;
     public string CurrentWorld => world.Name ?? "";
     public uint CurrentItem => index < rules.Count ? rules[index].ItemId : 0;
 
@@ -50,6 +55,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     {
         if (Running) return;
         pause.Reset();
+        OfferCount = null; CandidateCount = 0; EvaluatedItem = 0;
         try
         {
             if (config.Pending != null || config.PendingSale != null || !travel.Ready || travel.Busy || !client.IsLoggedIn || client.TerritoryType != 129 || player.ContentId == 0)
@@ -94,7 +100,12 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         market.CloseMarket();
         if (player.CurrentWorld.RowId != world.Id)
         {
-            travel.ChangeWorld(world.Name); ownsTravel = true; Set(Phase.Travel, 600);
+            var aether = objects.FirstOrDefault(x => x.ObjectKind == ObjectKind.Aetheryte && x.BaseId == 8);
+            if (client.TerritoryType != 129 || objects.LocalPlayer == null || aether == null || !travel.MeshReady)
+                throw new InvalidOperationException("Limsa aetheryte walking route unavailable");
+            sourceWorld = player.CurrentWorld.RowId;
+            if (!travel.Move(objects.LocalPlayer.Position, aether.Position)) throw new InvalidOperationException("Aetheryte path rejected");
+            ownsMovement = true; Set(Phase.WalkToAetheryte, 120);
         }
         else BeginWalk();
     }
@@ -160,6 +171,20 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                 throw new TimeoutException($"{State}: {market.Diagnostics()}");
             }
             if (!travel.Ready) throw new InvalidOperationException("Dependency unloaded");
+            if (State == Phase.WalkToAetheryte)
+            {
+                if (!client.IsLoggedIn || player.ContentId != character || player.CurrentWorld.RowId != sourceWorld || client.TerritoryType != 129)
+                    throw new InvalidOperationException("Character or world changed while walking to aetheryte");
+                var aether = objects.FirstOrDefault(x => x.ObjectKind == ObjectKind.Aetheryte && x.BaseId == 8 && x.IsTargetable);
+                if (aether == null || objects.LocalPlayer == null) throw new InvalidOperationException("Aetheryte disappeared");
+                if (ownsMovement) travel.PollMove();
+                // Lifestream must recognize the main aetheryte before receiving any travel request.
+                if (Vector3.Distance(objects.LocalPlayer.Position, aether.Position) > 12 || !travel.AtLimsaAetheryte) return;
+                if (ownsMovement) { travel.StopMove(); ownsMovement = false; }
+                if (pause.Enter(true, false, false, DateTime.UtcNow)) return;
+                travel.ChangeWorld(world.Name); ownsTravel = true; Set(Phase.Travel, 600);
+                return;
+            }
             if (State == Phase.Travel)
             {
                 if (!travel.Busy && client.IsLoggedIn && player.ContentId == character && player.CurrentWorld.RowId == world.Id) BeginWalk();
@@ -190,10 +215,11 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
             switch (State)
             {
                 case Phase.Search:
-                    if (market.Search(item.Name.ToString())) Set(Phase.Select);
+                    if (market.ResultsOpenFor(rule.ItemId)) Set(Phase.Listings);
+                    else if (market.Search(item.Name.ToString())) Set(Phase.Select);
                     break;
                 case Phase.Select:
-                    if (market.SelectItem(rule.ItemId)) Set(Phase.Listings);
+                    if (market.ResultsOpenFor(rule.ItemId) || market.SelectItem(rule.ItemId)) Set(Phase.Listings);
                     break;
                 case Phase.Listings:
                     if (!market.ListingsReady(rule.ItemId)) break;
@@ -217,8 +243,16 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                         if (!market.SelectOffer(offer, character)) throw new InvalidOperationException("Retry listing changed");
                         Set(Phase.Confirm, 15); break;
                     }
-                    var options = market.Read(rule.ItemId, character).Where(x => !attempted.Contains(x.Id) && Rules.Eligible(rule, x, item.CanBeHq))
+                    var available = market.Read(rule.ItemId, character);
+                    var options = available.Where(x => !attempted.Contains(x.Id) && Rules.Eligible(rule, x, item.CanBeHq))
                         .OrderBy(x => x.Price).ThenBy(x => x.Total).ThenBy(x => x.Id).ToList();
+                    OfferCount = available.Count; CandidateCount = options.Count; EvaluatedItem = rule.ItemId;
+                    if (!evaluated)
+                    {
+                        evaluated = true;
+                        log.Information("Market eligibility item {Item}: {Offers} offers, {Candidates} candidates; cap {Cap}, tax {Tax}, quality {Quality}, remaining {Remaining}",
+                            rule.ItemId, available.Count, options.Count, rule.UnitLimit, rule.IncludeTax, rule.Quality, (long)rule.QuantityLimit - rule.Purchased);
+                    }
                     if (options.Count == 0) { NextItem(true); break; }
                     offer = options[0];
                     if (InventoryManager.Instance() == null || offer.Total > InventoryManager.Instance()->GetGil())
@@ -228,12 +262,12 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                         Quantity = offer.Quantity, WorldId = world.Id, CharacterId = character, Hq = offer.Hq,
                         InventoryBefore = InventoryManager.Instance()->GetInventoryItemCount(offer.Item, offer.Hq, false, false), Submitted = false };
                     retries = 0;
-                    save(); attempted.Add(offer.Id);
-                    if (!market.SelectOffer(offer, character))
+                    if (!market.SelectOffer(offer, character, save))
                     {
                         // SelectOffer returned before dispatching an event, so nothing was purchased.
-                        config.Pending = null; save(); Set(Phase.Listings); break;
+                        config.Pending = null; next = DateTime.UtcNow.AddSeconds(1); break;
                     }
+                    attempted.Add(offer.Id);
                     Set(Phase.Confirm, 15);
                     break;
                 case Phase.Confirm:
@@ -285,11 +319,11 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         var pending = config.Pending;
         if (Running || pending == null || !client.IsLoggedIn || player.ContentId != pending.CharacterId ||
             InventoryManager.Instance() == null) return false;
-        var rule = config.Lists.SelectMany(x => x.Items).SingleOrDefault(x => x.Id == pending.RuleId);
+        var rule = config.FindRule(pending.RuleId);
         if (rule == null) return false;
         int count = InventoryManager.Instance()->GetInventoryItemCount(pending.ItemId, pending.Hq, false, false);
         if (!PurchaseRecovery.Resolve(rule, pending, count, market.Visible("SelectYesno"), confirmedNotPurchased, countUnresolved)) return false;
-        config.Pending = null; save(); return true;
+        config.Pending = null; config.PruneDetached(); save(); return true;
     }
     private bool CheckSpace()
     {
@@ -374,6 +408,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         while (index < rules.Count && rules[index].Purchased >= rules[index].QuantityLimit) index++;
         if (index >= rules.Count) { NextWorld(); return; }
         if (advance) listingRetries = 0;
+        evaluated = false;
         market.CloseResults(); Set(Phase.Search);
     }
     private void Fail(Exception ex) { log.Error(ex, "Market Voyager stopped after bounded same-listing retries"); Stop(Phase.Error); }

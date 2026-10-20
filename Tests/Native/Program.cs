@@ -12,6 +12,11 @@ unsafe class Program
     static nint callbackOwner, callbackRaw, callbackEvaluated;
     static int callbackKind;
     static bool savedBeforeClick, correctInput;
+    static int focuses;
+    static nint focusedNode;
+    [UnmanagedCallersOnly]
+    static byte Focus(AtkUnitBase* owner, AtkResNode* node, byte cursor, uint param)
+    { focuses++; focusedNode = (nint)node; return 1; }
     [UnmanagedCallersOnly]
     static byte Visible(AtkResNode* node) => (byte)(node != null && node->NodeFlags.HasFlag(NodeFlags.Visible) ? 1 : 0);
     [UnmanagedCallersOnly]
@@ -31,6 +36,7 @@ unsafe class Program
     {
         int checks = 0;
         AtkResNode.Addresses.IsVisible.Value = (nint)(delegate* unmanaged<AtkResNode*, byte>)&Visible;
+        AtkUnitBase.Addresses.SetFocusNode.Value = (nint)(delegate* unmanaged<AtkUnitBase*, AtkResNode*, byte, uint, byte>)&Focus;
         void Check(bool value, string reason) { checks++; if (!value) throw new Exception(reason); }
         AddonItemSearch addon = default;
         AtkComponentTextInput input = default;
@@ -74,6 +80,19 @@ unsafe class Program
         Check(!NativeMarket.NotifyTextChanged(&other, &input) && changes == 1, "Foreign input callback not invoked");
         input.Callback = null;
         Check(!NativeMarket.NotifyTextChanged(&owner, &input), "Missing input callback rejected");
+        AtkCollisionNode inputCollision = default;
+        AtkComponentNode inputNode = default;
+        input.OwnerNode = &inputNode; input.CollisionNode = &inputCollision; input.Enabled = true;
+        Check(!NativeMarket.FocusInput(&owner, &input) && focuses == 1 && focusedNode == (nint)(&inputCollision),
+            "Search uses the normal collision-node focus route and waits before typing");
+        input.IsActive = true;
+        Check(NativeMarket.FocusInput(&owner, &input) && focuses == 1, "Activated search input proceeds without repeated focus");
+        input.Enabled = false;
+        Check(!NativeMarket.FocusInput(&owner, &input) && focuses == 1, "Disabled search input is not forced active");
+        input.Enabled = true;
+        Check(!NativeMarket.FocusInput(&other, &input), "Foreign search input cannot be focused");
+        input.CollisionNode = null;
+        Check(!NativeMarket.FocusInput(&owner, &input), "Missing focus target rejected");
 
         var vtable = stackalloc nint[3];
         vtable[2] = (nint)(delegate* unmanaged<AtkEventListener*, AtkEventType, int, AtkEvent*, AtkEventData*, void>)&Receive;
@@ -93,6 +112,11 @@ unsafe class Program
         var offer = new Offer(123, 42, 100, 5, 25, true);
         agent.ResultItemId = 42; agent.ResultSelectedIndex = 1;
         proxy.SearchItemId = 42; proxy.ListingCount = 2;
+        Check(NativeMarket.ResultsMatch(&agent, &proxy, 42), "An already opened exact-item listing window can advance directly to eligibility");
+        Check(!NativeMarket.ResultsMatch(&agent, &proxy, 43), "Another item's listing window cannot bypass search");
+        agent.ResultItemId = 43;
+        Check(!NativeMarket.ResultsMatch(&agent, &proxy, 42), "Stale agent/proxy combination cannot bypass search");
+        agent.ResultItemId = 42;
         ref var row = ref proxy.Listings[1];
         row.ListingId = 123; row.ItemId = 42; row.UnitPrice = 100; row.Quantity = 5; row.TotalTax = 25; row.IsHqItem = true;
         Check(NativeMarket.SelectedMatches(&agent, &proxy, offer) && proxy.LastPurchasedMarketboardItem.ListingId == 0, "Pre-OK selected row matches with an empty last-purchase record");

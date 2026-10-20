@@ -1,9 +1,10 @@
-Market Voyager 1.0.1.3 — search notification, purchase confirmation and stopped editing
+Market Voyager 1.0.1.4 — listing eligibility, search focus and walking return
 
-- Notify the registered input callback after changing the search text, allowing the normal game UI to enable Search. No button flags are forced.
-- Before accepting a purchase, validate the currently selected listing ID, item, quantity, price, tax and quality. The last-purchase record is updated after acceptance and no longer blocks the confirmation dialog.
-- Persist submission state immediately before the ordinary OK click. Cancel owned, unsubmitted purchase dialogs on stop when possible; reconcile successful purchases after stopping.
-- Keep settings and bulk editing available after stop. Protect only deletion/reset of the row with an unresolved transaction. Add a not-purchased recovery action for old unresolved records without increasing purchased counts or inventing resale stock.
-- Preserve existing purchase caps, inventory reconciliation and registered-list bulk editing.
+- Activate the search input through its normal collision-node focus event before entering text; wait for actual widget activation. Never force enabled flags.
+- Recognize an already opened matching item listing window in both search stages, then run the existing price, tax, quality and quantity checks. A row rejected before dispatch is no longer marked attempted, and the existing timeout remains bounded.
+- Display the last checked item's offer/candidate counts and log one eligibility summary per item attempt. No additional external requests or idle polling.
+- Allow single/bulk deletion after stopping while retaining unresolved purchase/sale records until reconciliation. Counter reset remains protected for unresolved rows.
+- Anchor list settings to the opening button and constrain its width/position; prevent gradual horizontal drift.
+- Walk back to the Limsa main aetheryte before requesting a world change. Require Lifestream to recognize aetheryte 8; disable the return-to-gateway option.
 
-Clean Release: 0 warnings/errors. 943 core assertions, 534 native ABI/search/selection checks, 847 UI/glyph/lifecycle checks and 38 background renders. In-game verification of this fix remains outstanding; public preview.
+Release build: zero warnings/errors. 943 core assertions, 542 native checks, 917 UI/glyph/lifecycle checks and 39 background renders passed. Actual in-game search, purchase and walking behavior remains unverified; public preview.

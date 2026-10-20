@@ -107,9 +107,9 @@ public sealed partial class Plugin : IDalamudPlugin
                 ImGui.TextWrapped(T("SalePending"));
                 if (!runner.Running && player.ContentId == sale.Character && ImGui.Button(T("CountSale")))
                 {
-                    var rule = config.Lists.SelectMany(x => x.Items).FirstOrDefault(x => x.Id == sale.RuleId);
+                    var rule = config.FindRule(sale.RuleId);
                     if (rule != null) Sales.Complete(rule, sale);
-                    config.PendingSale = null; Save();
+                    config.PendingSale = null; config.PruneDetached(); Save();
                 }
             }
             if (ImGui.BeginTabBar("Tabs"))
