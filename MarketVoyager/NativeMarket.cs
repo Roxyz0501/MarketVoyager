@@ -12,15 +12,34 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
     private InfoProxyItemSearch* Proxy => InfoModule.Instance() == null ? null : InfoModule.Instance()->GetInfoProxyItemSearch();
     public void CloseResults() { var a = gui.GetAddonByName<AtkUnitBase>("ItemSearchResult"); if (a != null && a->IsVisible) a->Close(true); }
     public void CloseMarket() { CloseResults(); var a = gui.GetAddonByName<AtkUnitBase>("ItemSearch"); if (a != null && a->IsVisible) a->Close(true); }
+    public string Diagnostics()
+    {
+        var a = gui.GetAddonByName<AddonItemSearch>("ItemSearch");
+        var result = gui.GetAddonByName<AddonItemSearchResult>("ItemSearchResult");
+        var proxy = Proxy;
+        return $"searchVisible={Visible("ItemSearch")}, mode={(a == null ? -1 : (int)a->Mode)}, " +
+            $"inputPresent={a != null && a->SearchTextInput != null}, " +
+            $"inputHasText={a != null && a->SearchTextInput != null && a->SearchTextInput->EvaluatedString.StringLength > 0}, " +
+            $"resultVisible={Visible("ItemSearchResult")}, rows={(result == null || result->Results == null ? -1 : result->Results->ListLength)}, " +
+            $"listingCount={(proxy == null ? 0 : proxy->ListingCount)}, waiting={proxy != null && proxy->WaitingForListings}";
+    }
 
     // The input widget and its actual registered button event are used; no request packet API.
     public bool Search(string name)
     {
         var a = gui.GetAddonByName<AddonItemSearch>("ItemSearch");
-        if (a == null || !Visible("ItemSearch") || a->SearchTextInput == null || a->Mode != AddonItemSearch.SearchMode.Normal) return false;
-        a->SearchTextInput->SetText(name);
+        if (!CanEnterSearch(a)) return false;
+        // Mode describes the previous result/category, not whether the name input is usable.
+        // The normal search button owns the transition into name-search mode.
+        if (a->SearchTextInput->EvaluatedString.ToString() != name)
+        {
+            a->SearchTextInput->SetText(name);
+            return false; // Let the ordinary input-change callback update the button first.
+        }
         return Click(&a->AtkUnitBase, a->SearchButton);
     }
+    internal static bool CanEnterSearch(AddonItemSearch* a) =>
+        a != null && a->IsVisible && a->IsReady && a->SearchTextInput != null;
     public bool SelectItem(uint item)
     {
         var a = gui.GetAddonByName<AddonItemSearch>("ItemSearch");
@@ -34,7 +53,19 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
             }
         return false;
     }
-    public bool ListingsReady(uint item) => Visible("ItemSearchResult") && Proxy != null && Proxy->SearchItemId == item && !Proxy->WaitingForListings;
+    public bool ListingsReady(uint item)
+    {
+        var a = gui.GetAddonByName<AddonItemSearchResult>("ItemSearchResult");
+        var proxy = Proxy;
+        if (a == null || !Visible("ItemSearchResult") || a->Results == null || proxy == null || proxy->SearchItemId != item) return false;
+        // WaitingForListings can remain set after the visible rows are fully populated.
+        // Validate the UI rows instead; a still-empty, waiting window is not complete.
+        if (!MarketReadiness.Ready(proxy->ListingCount, a->Results->ListLength,
+            a->Results->IsUpdatePending, a->Results->IsScrollRefreshPending, proxy->WaitingForListings)) return false;
+        for (int i = 0; i < proxy->ListingCount; i++)
+            if (proxy->Listings[i].ItemId != item) return false;
+        return true;
+    }
     public List<Offer> Read(uint item, ulong owner)
     {
         List<Offer> offers = [];
@@ -82,7 +113,7 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
         if (check != null && check->OwnerNode != null && check->OwnerNode->AtkResNode.IsVisible() && !check->IsChecked)
         {
             if (!check->IsEnabled) return 0;
-            var ev = (AtkEvent*)check->OwnerNode->AtkResNode.AtkEventManager.Event;
+            var ev = FindButtonClick(&a->AtkUnitBase, (AtkEvent*)check->OwnerNode->AtkResNode.AtkEventManager.Event);
             if (ev == null) return 0;
             AtkEventData data = default;
             a->AtkUnitBase.ReceiveEvent(ev->State.EventType, (int)ev->Param, ev, &data);
@@ -93,10 +124,19 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
     internal static bool Click(AtkUnitBase* addon, AtkComponentButton* button)
     {
         if (button == null || !button->IsEnabled || button->OwnerNode == null || !button->OwnerNode->AtkResNode.IsVisible()) return false;
-        var ev = (AtkEvent*)button->OwnerNode->AtkResNode.AtkEventManager.Event;
+        var ev = FindButtonClick(addon, (AtkEvent*)button->OwnerNode->AtkResNode.AtkEventManager.Event);
         if (ev == null) return false;
         AtkEventData data = default;
         addon->ReceiveEvent(ev->State.EventType, (int)ev->Param, ev, &data);
         return true;
+    }
+    internal static AtkEvent* FindButtonClick(AtkUnitBase* addon, AtkEvent* first)
+    {
+        // The first registered event may be hover/focus/press, not a click.
+        // Follow the registration and dispatch only the addon-owned click.
+        for (int count = 0; first != null && count < 32; count++, first = first->NextEvent)
+            if (first->State.EventType == AtkEventType.ButtonClick && first->Listener == (AtkEventListener*)addon)
+                return first;
+        return null;
     }
 }

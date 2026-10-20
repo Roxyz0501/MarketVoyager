@@ -14,3 +14,5 @@
 - Retainer Listing Helper / RetainerRecall, Roxyz0501: reference for ordinary inventory context-menu labels and UI ownership validation. No runtime code file copied. Native menu selection here uses the host-provided AddonContextMenu method.
 
 - [Gil Ledger / MarketLedger](https://github.com/Roxyz0501/MarketLedger), Roxyz0501, MIT: conceptual UI reference for fixed table headers, aligned filters and scrollable data grids in 1.0.1.0. No UI source file copied.
+
+- [Gil Beacon](https://github.com/Roxyz0501/GilBeacon), Roxyz0501, Apache-2.0: its recorded read-only investigation established that the market's WaitingForListings flag can remain set after rows are populated. Referenced that observation when implementing independent readiness checks; no source code copied.

@@ -58,6 +58,14 @@ unsafe class Program
    runnerType.GetMethod("TogglePause")!.Invoke(runner,null);
    Check(!(bool)runnerType.GetProperty("IsPaused")!.GetValue(runner)!,"production runner resume clears pause");
    runnerType.GetMethod("Stop")!.Invoke(runner,[Enum.Parse(state.PropertyType,"Stopped")]);
+   runnerType.GetField("rules",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(runner,new List<BuyRule>{new(){ItemId=5333,QuantityLimit=10},new(){ItemId=4,QuantityLimit=10}});
+   var retryField=runnerType.GetField("listingRetries",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   retryField.SetValue(runner,3);
+   runnerType.GetMethod("NextItem",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(runner,[false]);
+   Check((int)retryField.GetValue(runner)! == 3,"reopening the same item does not reset retry budget");
+   runnerType.GetMethod("NextItem",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(runner,[true]);
+   Check((int)retryField.GetValue(runner)! == 0,"advancing to the next item resets retry budget");
+   runnerType.GetMethod("Stop")!.Invoke(runner,[Enum.Parse(state.PropertyType,"Stopped")]);
    var selected=(HashSet<Guid>)type.GetField("selectedRules",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)!;
    selected.UnionWith(Dummy.Config.Lists[0].Items.Take(2).Select(x=>x.Id));
    type.GetField("openNpcBatch",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(plugin,true);

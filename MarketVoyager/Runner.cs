@@ -90,7 +90,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     private void NextWorld()
     {
         if (rules.All(x => x.Purchased >= x.QuantityLimit) || !worlds.TryDequeue(out world)) { Stop(Phase.Done); return; }
-        index = 0; attempted.Clear();
+        index = 0; listingRetries = 0; attempted.Clear();
         market.CloseMarket();
         if (player.CurrentWorld.RowId != world.Id)
         {
@@ -134,6 +134,8 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                 if (State is Phase.Search or Phase.Select or Phase.Listings && listingRetries < 3 && !market.Visible("SelectYesno"))
                 {
                     listingRetries++;
+                    log.Warning("Market search retry {Retry}/3 at {Phase}, item {Item}: {Details}",
+                        listingRetries, State, CurrentItem, market.Diagnostics());
                     market.CloseResults();
                     if (market.Visible("ItemSearch")) Set(Phase.Search); else BeginWalk();
                     next = DateTime.UtcNow.AddSeconds(3);
@@ -147,7 +149,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                     next = DateTime.UtcNow.AddSeconds(3);
                     return;
                 }
-                throw new TimeoutException(State.ToString());
+                throw new TimeoutException($"{State}: {market.Diagnostics()}");
             }
             if (!travel.Ready) throw new InvalidOperationException("Dependency unloaded");
             if (State == Phase.Travel)
@@ -349,7 +351,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         if (advance) index++;
         while (index < rules.Count && rules[index].Purchased >= rules[index].QuantityLimit) index++;
         if (index >= rules.Count) { NextWorld(); return; }
-        listingRetries = 0;
+        if (advance) listingRetries = 0;
         market.CloseResults(); Set(Phase.Search);
     }
     private void Fail(Exception ex) { log.Error(ex, "Market Voyager stopped after bounded same-listing retries"); Stop(Phase.Error); }
