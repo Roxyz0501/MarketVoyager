@@ -86,19 +86,24 @@ public sealed partial class Plugin
     }
     // Labels above controls keep translated text out of neighbouring columns.
     private void Field(string key) { ImGui.TableNextColumn(); ImGui.TextWrapped(T(key)); ImGui.SetNextItemWidth(-1); }
-    private void DrawBatchSettings()
+    private void DrawBatchSettings(bool editing = false)
     {
         if (ImGui.BeginTable("InputDefaults", 3, ImGuiTableFlags.SizingStretchSame))
         {
             Field("UnitShort");
-            ImGui.BeginDisabled(npcMode);
+            ImGui.BeginDisabled(npcMode || editing && !setPrice);
             if (ImGui.InputInt("###BatchPrice", ref batchPrice, 0, 0)) batchPrice = Math.Max(1, batchPrice);
             ImGui.EndDisabled();
-            Field("QuantityShort"); if (ImGui.InputInt("###BatchQuantity", ref batchQuantity, 0, 0)) batchQuantity = Math.Max(1, batchQuantity);
-            Field("Quality"); ImGui.Combo("###BatchQuality", ref batchQuality, new[] { T("Nq"), T("Hq"), T("Any") }, 3);
+            Field("QuantityShort"); ImGui.BeginDisabled(editing && !setQuantity);
+            if (ImGui.InputInt("###BatchQuantity", ref batchQuantity, 0, 0)) batchQuantity = Math.Max(1, batchQuantity);
+            ImGui.EndDisabled();
+            Field("Quality"); ImGui.BeginDisabled(editing && !setQuality);
+            ImGui.Combo("###BatchQuality", ref batchQuality, new[] { T("Nq"), T("Hq"), T("Any") }, 3);
+            ImGui.EndDisabled();
             ImGui.EndTable();
         }
-        ImGui.BeginDisabled(npcMode); ImGui.Checkbox(T("Tax") + "###BatchTax", ref batchTax); ImGui.EndDisabled();
+        ImGui.BeginDisabled(npcMode || editing && !setPrice); ImGui.Checkbox(T("Tax") + "###BatchTax", ref batchTax); ImGui.EndDisabled();
+        ImGui.BeginDisabled(editing && !setPrice);
         if (ImGui.CollapsingHeader(T("NpcOptions") + "###NpcOptions"))
         {
             ImGui.Checkbox(T("NpcMode") + "###NpcMode", ref npcMode);
@@ -107,6 +112,7 @@ public sealed partial class Plugin
             ImGui.TextWrapped(T("NpcHelp"));
         }
         else if (npcMode) ImGui.TextDisabled($"{T("NpcOptions")}: -{margin:N0}");
+        ImGui.EndDisabled();
     }
     private void DrawCatalogue(ShoppingList list)
     {
@@ -155,6 +161,9 @@ public sealed partial class Plugin
     {
         ImGui.SetNextItemWidth(240);
         if (ImGui.InputTextWithHint("###RegisteredQuery", T("Find"), ref registeredQuery, 100)) rulePage = 0;
+        ImGui.SameLine(); ImGui.BeginDisabled(list.Items.Count == 0);
+        if (ImGui.Button(T("BatchEdit") + "###BatchEdit")) openBatch = true;
+        ImGui.EndDisabled();
         ImGui.SameLine(); if (ImGui.Button(T("SelectAll") + "###SelectRules")) selectedRules.UnionWith(list.Items.Select(x => x.Id));
         ImGui.SameLine(); if (ImGui.Button(T("ClearSelection") + "###ClearRules")) selectedRules.Clear();
         ImGui.SameLine(); if (ImGui.Button($"{T("Actions")} ({selectedRules.Count})###Actions")) ImGui.OpenPopup("RuleActions");
@@ -169,18 +178,29 @@ public sealed partial class Plugin
             if (ImGui.MenuItem(T("Reset"))) { if (Catalog.Reset(list, list.Items.Select(x => x.Id).ToHashSet()) > 0) Save(); }
             ImGui.EndPopup();
         }
-        if (openBatch) { ImGui.OpenPopup("BatchPopup"); openBatch = false; }
-        if (openNpcBatch) { ImGui.OpenPopup("NpcBatchPopup"); openNpcBatch = false; }
+        if (openBatch)
+        {
+            batchAll = selectedRules.Count == 0;
+            setPrice = setQuantity = setQuality = false;
+            batchMessage = null;
+            ImGui.OpenPopup("BatchPopup"); openBatch = false;
+        }
+        if (openNpcBatch)
+        {
+            batchAll = selectedRules.Count == 0; batchMessage = null;
+            ImGui.OpenPopup("NpcBatchPopup"); openNpcBatch = false;
+        }
         ImGui.SetNextWindowSize(new(560, 0), ImGuiCond.Appearing);
         if (ImGui.BeginPopup("NpcBatchPopup"))
         {
-            ImGui.TextWrapped($"{T("SetNpc")} ({selectedRules.Count})");
+            ImGui.TextWrapped(T("SetNpc"));
+            DrawBatchTargets(list);
             ImGui.TextWrapped(T("Margin")); ImGui.SetNextItemWidth(160);
             if (ImGui.InputInt("###NpcBatchMargin", ref margin)) margin = Math.Max(1, margin);
             ImGui.TextWrapped(T("NpcHelp"));
-            if (ImGui.Button(T("EditSelected") + "###ApplyNpcBatch"))
+            if (ImGui.Button(T(batchAll ? "EditAll" : "EditSelected") + "###ApplyNpcBatch"))
             {
-                ApplyResult(Catalog.Edit(list, selectedRules, catalogueById,
+                ApplyResult(Catalog.Edit(list, BatchTargets(list), catalogueById,
                     new(batchPrice, batchQuantity, (Quality)batchQuality, true, true, margin, true, false, false)));
                 if (batchMessage?.Error == null) ImGui.CloseCurrentPopup();
             }
@@ -190,13 +210,18 @@ public sealed partial class Plugin
         ImGui.SetNextWindowSize(new(620, 0), ImGuiCond.Appearing);
         if (ImGui.BeginPopup("BatchPopup"))
         {
-            ImGui.TextUnformatted($"{T("BatchEdit")} ({selectedRules.Count})");
+            ImGui.TextUnformatted(T("BatchEdit"));
+            DrawBatchTargets(list);
+            ImGui.TextWrapped(T("BatchHelp"));
             ImGui.Checkbox(T("SetPrice") + "###SetPrice", ref setPrice); ImGui.SameLine();
             ImGui.Checkbox(T("SetQuantity") + "###SetQuantity", ref setQuantity); ImGui.SameLine();
             ImGui.Checkbox(T("SetQuality") + "###SetQuality", ref setQuality);
-            DrawBatchSettings();
-            if (ImGui.Button(T("EditSelected") + "###EditSelected"))
-            { ApplyResult(Catalog.Edit(list, selectedRules, catalogueById, Options(true))); if (batchMessage?.Error == null) ImGui.CloseCurrentPopup(); }
+            DrawBatchSettings(true);
+            ImGui.BeginDisabled(!setPrice && !setQuantity && !setQuality);
+            if (ImGui.Button(T(batchAll ? "EditAll" : "EditSelected") + "###EditSelected"))
+            { ApplyResult(Catalog.Edit(list, BatchTargets(list), catalogueById, Options(true))); if (batchMessage?.Error == null) ImGui.CloseCurrentPopup(); }
+            ImGui.EndDisabled();
+            if (batchMessage?.Error is { } error) ImGui.TextWrapped(T(error));
             ImGui.EndPopup();
         }
         var rows = string.IsNullOrWhiteSpace(registeredQuery) ? list.Items : list.Items.Where(x =>
@@ -250,7 +275,17 @@ public sealed partial class Plugin
         }
         if (remove is { } id) { list.Items.RemoveAll(x => x.Id == id); selectedRules.Remove(id); Save(); }
     }
-    private bool openBatch, openNpcBatch;
+    private bool openBatch, openNpcBatch, batchAll;
+    private IReadOnlySet<Guid> BatchTargets(ShoppingList list) =>
+        batchAll ? list.Items.Select(x => x.Id).ToHashSet() : selectedRules;
+    private void DrawBatchTargets(ShoppingList list)
+    {
+        ImGui.BeginDisabled(selectedRules.Count == 0);
+        if (ImGui.RadioButton($"{T("SelectedRows")} ({selectedRules.Count})###SelectedRows", !batchAll)) batchAll = false;
+        ImGui.EndDisabled();
+        if (ImGui.RadioButton($"{T("AllRows")} ({list.Items.Count})###AllRows", batchAll)) batchAll = true;
+        ImGui.Separator();
+    }
     private void PageControls(string id, ref int page, int count)
     {
         ImGui.PushID(id); int last = Math.Max(0, (count - 1) / PageSize); page = Math.Clamp(page, 0, last);

@@ -62,11 +62,20 @@ unsafe class Program
    selected.UnionWith(Dummy.Config.Lists[0].Items.Take(2).Select(x=>x.Id));
    type.GetField("openNpcBatch",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(plugin,true);
    Frame(); Frame(); Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,"ja-npc-batch.bmp"));
+   io.AddKeyEvent(ImGuiKey.Escape,true); Frame(); io.AddKeyEvent(ImGuiKey.Escape,false); Frame();
+   selected.Clear(); type.GetField("openBatch",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(plugin,true);
+   var beforeBatch=System.Text.Json.JsonSerializer.Serialize(Dummy.Config.Lists[0]);
+   Frame(); Frame(); Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,"ja-registered-batch.bmp"));
+   Check((bool)type.GetField("batchAll",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)!,"direct bulk edit defaults to all registered rows when none selected");
+   var targets=(IReadOnlySet<Guid>)type.GetMethod("BatchTargets",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,[Dummy.Config.Lists[0]])!;
+   Check(targets.Count==45,"all registered rows includes off-page items");
+   Check(beforeBatch==System.Text.Json.JsonSerializer.Serialize(Dummy.Config.Lists[0]),"opening bulk editor preserves saved values and counters");
+   Check(!(bool)type.GetField("setPrice",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)! && !(bool)type.GetField("setQuantity",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)! && !(bool)type.GetField("setQuality",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)!,"bulk edit initially changes no fields");
    int saves=Dummy.Saves; for(int i=0;i<20;i++) Frame(); Check(Dummy.Saves==saves,"Unchanged rendering writes zero config files");
   }
   Check(Dummy.Subscriptions==0,"Unsubscribes events"); Check(Dummy.Commands.Count==0,"Removes command");
   ImGui.DestroyContext(); foreach(var pin in Dummy.Pins) pin.Free();
-  Console.WriteLine($"PASS {checks} UI/glyph/lifecycle checks; 30 background renders.");
+  Console.WriteLine($"PASS {checks} UI/glyph/lifecycle checks; 31 background renders.");
  }
 }
 public unsafe class Dummy:DispatchProxy

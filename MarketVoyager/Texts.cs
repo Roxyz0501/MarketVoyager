@@ -4,6 +4,9 @@ internal static class Texts
     public static readonly string[] Codes = ["ja", "en", "de", "fr", "ko", "zh-Hans", "zh-Hant"];
     private static readonly Dictionary<string, string[]> Text = new()
     {
+        ["SelectedRows"] = ["選択した行", "Selected rows", "Ausgewählte Zeilen", "Lignes sélectionnées", "선택한 행", "所选行", "所選列"],
+        ["AllRows"] = ["登録済みの全行（検索外を含む）", "All registered rows (including outside search)", "Alle Einträge (auch außerhalb der Suche)", "Toutes les lignes (hors recherche incluses)", "등록된 모든 행 (검색 외 포함)", "全部登记行（包括搜索结果之外）", "全部登錄列（包括搜尋結果之外）"],
+        ["BatchHelp"] = ["変更する項目にチェックして適用します。購入済み数・未売却数は変わりません。", "Check the fields to change, then apply. Purchased and unsold counts stay unchanged.", "Zu ändernde Felder markieren und anwenden. Kaufzähler und unverkaufte Mengen bleiben erhalten.", "Cochez les champs à modifier, puis appliquez. Les quantités achetées et non revendues sont conservées.", "변경할 항목을 선택한 뒤 적용하세요. 구매 완료 및 미판매 수량은 유지됩니다.", "勾选需要修改的项目后应用。已购数量和未出售数量保持不变。", "勾選需要修改的項目後套用。已購數量和未出售數量保持不變。"],
         ["Run"] = ["開始", "Start", "Starten", "Démarrer", "시작", "开始", "開始"],
         ["Pause"] = ["一時停止", "Pause", "Pausieren", "Pause", "일시 정지", "暂停", "暫停"],
         ["Resume"] = ["再開", "Resume", "Fortsetzen", "Reprendre", "재개", "继续", "繼續"],
