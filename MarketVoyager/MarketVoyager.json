@@ -1,0 +1,20 @@
+{
+  "Author": "Roxyz0501",
+  "Name": "Market Voyager",
+  "InternalName": "MarketVoyager",
+  "Punchline": "購入リストに沿ってリムサからワールドを巡回",
+  "Description": "購入リスト・税込単価上限・数量上限・HQ/NQ/無視を指定して巡回購入。検索・ジャンル・NPC売却価格・一括追加変更・購入済み数リセットに対応。任意の自動NPC売却は空き枠のしきい値で発動し、購入済み数を維持して市場へ復帰します。Lifestream/vnavmesh必須。公開プレビュー：ゲーム内の購入・売却・移動は未検証。別論理DCへは現行エーテライト経路対応のLifestreamが必要です。",
+  "RepoUrl": "https://github.com/Roxyz0501/MarketVoyager",
+  "IconUrl": "https://raw.githubusercontent.com/Roxyz0501/MarketVoyager/main/MarketVoyager/images/icon.png",
+  "ApplicableVersion": "any",
+  "DalamudApiLevel": 15,
+  "Tags": [
+    "market",
+    "shopping"
+  ],
+  "IsHide": false,
+  "RequiredPlugins": [
+    "Lifestream",
+    "vnavmesh"
+  ]
+}
