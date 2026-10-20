@@ -27,6 +27,8 @@ unsafe class Program
    var textures=new Dictionary<ulong,(nint,int,int)>();
    for(int i=0;i<io.Fonts.Textures.Size;i++) { byte* pixels; int w=0,h=0,bpp=0; io.Fonts.GetTexDataAsRGBA32(i,&pixels,&w,&h,&bpp); io.Fonts.SetTexID(i,new ImTextureID((ulong)i+1)); textures[(ulong)i+1]=((nint)pixels,w,h); }
    void Frame() { ImGui.NewFrame(); Invoke("Draw"); ImGui.Render(); }
+   Dummy.Config.Lists[0].Items = game.GetExcelSheet<Lumina.Excel.Sheets.Item>()!.Where(x => x.ItemSearchCategory.RowId != 0 && x.PriceLow >= 10).Take(45)
+    .Select((x,i) => new BuyRule { ItemId=x.RowId, UnitLimit=5000+i*100, QuantityLimit=20, Purchased=i%5, Quality=x.CanBeHq ? Quality.Any : Quality.Nq, IncludeTax=i%2==0 }).ToList();
    var codes=new[]{"ja","en","de","fr","ko","zh-Hans","zh-Hant"};
    foreach(var code in codes) {
     Dummy.Config.Language=code; Frame(); Frame(); Check(ImGui.GetDrawData().TotalVtxCount>0,"Draw "+code);
@@ -44,11 +46,27 @@ unsafe class Program
     }
 
    }
+   Dummy.Config.Language="ja";
+   var runner=type.GetField("runner",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)!;
+   var runnerType=runner.GetType(); var state=runnerType.GetProperty("State")!;
+   state.SetValue(runner,Enum.Parse(state.PropertyType,"Search"));
+   runnerType.GetField("deadline",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(runner,DateTime.UtcNow.AddSeconds(30));
+   runnerType.GetMethod("TogglePause")!.Invoke(runner,null);
+   runnerType.GetMethod("Tick")!.Invoke(runner,null);
+   Check((bool)runnerType.GetProperty("IsPaused")!.GetValue(runner)!,"production runner pauses at a safe boundary before native calls");
+   Frame(); Frame(); Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,"ja-paused.bmp"));
+   runnerType.GetMethod("TogglePause")!.Invoke(runner,null);
+   Check(!(bool)runnerType.GetProperty("IsPaused")!.GetValue(runner)!,"production runner resume clears pause");
+   runnerType.GetMethod("Stop")!.Invoke(runner,[Enum.Parse(state.PropertyType,"Stopped")]);
+   var selected=(HashSet<Guid>)type.GetField("selectedRules",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)!;
+   selected.UnionWith(Dummy.Config.Lists[0].Items.Take(2).Select(x=>x.Id));
+   type.GetField("openNpcBatch",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(plugin,true);
+   Frame(); Frame(); Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,"ja-npc-batch.bmp"));
    int saves=Dummy.Saves; for(int i=0;i<20;i++) Frame(); Check(Dummy.Saves==saves,"Unchanged rendering writes zero config files");
   }
   Check(Dummy.Subscriptions==0,"Unsubscribes events"); Check(Dummy.Commands.Count==0,"Removes command");
   ImGui.DestroyContext(); foreach(var pin in Dummy.Pins) pin.Free();
-  Console.WriteLine($"PASS {checks} UI/glyph/lifecycle checks; 28 background renders.");
+  Console.WriteLine($"PASS {checks} UI/glyph/lifecycle checks; 30 background renders.");
  }
 }
 public unsafe class Dummy:DispatchProxy

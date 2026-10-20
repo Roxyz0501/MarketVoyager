@@ -98,3 +98,21 @@ Check(Catalog.Add(empty,huge,options).Error=="Capacity" && empty.Items.Count==0,
 Check(Catalog.Add(empty,huge.Take(1000),options).Changed==1000 && empty.Items.All(x=>x.Quality==Quality.Nq),"1000 row boundary and no HQ normalization");
 try { Sales.Complete(ledger,sale); Check(false,"duplicate sale accepted"); } catch(InvalidOperationException) { Check(true,"duplicate sale blocked"); }
 Console.WriteLine($"Complete suite: {checks} assertions passed.");
+
+var pause = new RunPause(); var now = new DateTime(2026,10,20,0,0,0,DateTimeKind.Utc);
+pause.Toggle(now);
+Check(pause.Requested && !pause.Enter(true,true,false,now), "pause waits for purchase or sale reconciliation");
+Check(!pause.Enter(true,false,true,now), "pause waits for owned movement");
+Check(!pause.Enter(false,false,false,now), "pause waits for safe phase");
+Check(pause.Enter(true,false,false,now), "pause enters before next purchase");
+Check(pause.Toggle(now.AddMinutes(5))==TimeSpan.FromMinutes(5) && !pause.Paused && !pause.Requested,"resume extends deadline by paused duration");
+pause.Toggle(now); Check(pause.Toggle(now.AddSeconds(2))==TimeSpan.Zero && !pause.Requested,"cancel queued pause without extending deadline");
+pause.Toggle(now); pause.Enter(true,false,false,now); pause.Reset();
+Check(!pause.Paused && !pause.Requested,"stop or fresh start clears pause");
+Console.WriteLine($"With pause controller: {checks} assertions passed.");
+
+var bulkNpc = new ShoppingList { Items=[new(){ItemId=10,QuantityLimit=37,Quality=Quality.Hq,Purchased=12},new(){ItemId=11,QuantityLimit=45,Quality=Quality.Any,Purchased=21}] };
+var npcResult=Catalog.Edit(bulkNpc,bulkNpc.Items.Select(x=>x.Id).ToHashSet(),catalogue.ToDictionary(x=>x.Id),new(1,1,Quality.Nq,true,true,7,true,false,false));
+Check(npcResult.Changed==2 && bulkNpc.Items[0].UnitLimit==93 && bulkNpc.Items[1].UnitLimit==193 && bulkNpc.Items.All(x=>x.IncludeTax),"dedicated bulk NPC action applies item-specific tax-inclusive limits");
+Check(bulkNpc.Items[0].QuantityLimit==37 && bulkNpc.Items[1].QuantityLimit==45 && bulkNpc.Items[0].Quality==Quality.Hq && bulkNpc.Items[1].Quality==Quality.Any && bulkNpc.Items[0].Purchased==12 && bulkNpc.Items[1].Purchased==21,"bulk NPC action preserves quantities quality and purchased totals");
+Console.WriteLine($"Final suite: {checks} assertions passed.");

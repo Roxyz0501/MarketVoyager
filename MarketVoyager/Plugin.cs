@@ -86,12 +86,11 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         if (!open) return;
         using var pushed = font.Push();
-        ImGui.SetNextWindowSize(new(850, 650), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new(1180, 720), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSizeConstraints(new(850, 500), new(float.MaxValue, float.MaxValue));
         if (ImGui.Begin("Market Voyager###MarketVoyager", ref open))
         {
-            ImGui.TextWrapped(T(runner.State.ToString()));
-            ImGui.TextUnformatted(runner.CurrentWorld);
-            if (runner.Running && ImGui.Button(T("Stop"))) runner.Stop();
+            DrawTransport();
             if (config.Pending is { } pending)
             {
                 ImGui.TextWrapped(T("Pending"));

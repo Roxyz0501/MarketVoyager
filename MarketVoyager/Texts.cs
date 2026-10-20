@@ -4,6 +4,23 @@ internal static class Texts
     public static readonly string[] Codes = ["ja", "en", "de", "fr", "ko", "zh-Hans", "zh-Hant"];
     private static readonly Dictionary<string, string[]> Text = new()
     {
+        ["Run"] = ["開始", "Start", "Starten", "Démarrer", "시작", "开始", "開始"],
+        ["Pause"] = ["一時停止", "Pause", "Pausieren", "Pause", "일시 정지", "暂停", "暫停"],
+        ["Resume"] = ["再開", "Resume", "Fortsetzen", "Reprendre", "재개", "继续", "繼續"],
+        ["Paused"] = ["一時停止中", "Paused", "Pausiert", "En pause", "일시 정지 중", "已暂停", "已暫停"],
+        ["Pausing"] = ["処理完了後に一時停止", "Pausing after current action", "Pause nach laufender Aktion", "Pause après l’action en cours", "현재 작업 완료 후 일시 정지", "当前操作完成后暂停", "目前操作完成後暫停"],
+        ["PauseHelp"] = ["進行中の購入・売却・移動を確認してから止めます。再開で同じリストの続きから進みます。停止は巡回を終了します。", "Finish checking the current purchase, sale or movement before pausing. Resume continues the same list. Stop ends the tour.", "Laufenden Kauf, Verkauf oder Weg vor der Pause abschließen. Fortsetzen führt dieselbe Liste weiter. Stoppen beendet die Tour.", "Terminer la vérification de l’achat, de la vente ou du trajet en cours avant la pause. Reprendre poursuit la même liste. Arrêter termine la tournée.", "진행 중인 구매, 판매, 이동을 확인한 뒤 멈춥니다. 재개하면 같은 목록에서 이어집니다. 중지는 순회를 종료합니다.", "确认当前购买、出售或移动完成后暂停。继续时从同一清单接着执行。停止会结束巡回。", "確認目前購買、出售或移動完成後暫停。繼續時從同一清單接著執行。停止會結束巡迴。"],
+        ["ListOptions"] = ["リスト設定", "List settings", "Listeneinstellungen", "Réglages de liste", "목록 설정", "清单设置", "清單設定"],
+        ["AddItems"] = ["アイテム追加", "Add items", "Hinzufügen", "Ajouter des objets", "아이템 추가", "添加物品", "新增物品"],
+        ["UnitShort"] = ["単価上限", "Unit price cap", "Preisgrenze", "Plafond unitaire", "단가 상한", "单价上限", "單價上限"],
+        ["QuantityShort"] = ["購入上限", "Quantity cap", "Mengengrenze", "Quantité limite", "구매 상한", "数量上限", "數量上限"],
+        ["TaxShort"] = ["税込", "With tax", "Mit Steuer", "TTC", "세금 포함", "含税", "含稅"],
+        ["AnyShort"] = ["無視", "Any", "Egal", "Tout", "무관", "不限", "不限"],
+        ["MinimumNpcShort"] = ["NPC売却価格の下限", "Min. NPC resale price", "Min. NPC-Verkaufspreis", "Revente PNJ minimale", "최소 NPC 판매가", "最低NPC出售价格", "最低NPC出售價格"],
+        ["NpcOptions"] = ["NPC価格から自動設定", "Set from NPC price", "Aus NPC-Preis setzen", "Calculer avec le prix PNJ", "NPC 가격으로 설정", "按NPC价格设置", "依NPC價格設定"],
+        ["Actions"] = ["選択項目の操作", "Selection actions", "Auswahlaktionen", "Actions de sélection", "선택 항목 작업", "所选项操作", "所選項操作"],
+        ["BatchEdit"] = ["まとめて変更", "Batch edit", "Sammeländerung", "Modifier en groupe", "일괄 변경", "批量修改", "批次修改"],
+        ["RemoveSelected"] = ["選択行を削除", "Remove selected rows", "Auswahl entfernen", "Supprimer la sélection", "선택 행 삭제", "删除所选行", "刪除所選列"],
         ["Tax"] = ["手数料・税込みで判定", "Include fees and tax", "Gebühren und Steuer einbeziehen", "Inclure frais et taxe", "수수료 및 세금 포함", "包含手续费和税费", "包含手續費和稅費"],
         ["AutoSell"] = ["購入品をNPCへ自動売却", "Automatically sell purchases to NPC", "Einkäufe automatisch an NPC verkaufen", "Revendre automatiquement les achats au PNJ", "구매품을 NPC에게 자동 판매", "自动向NPC出售购入物品", "自動向NPC出售購入物品"],
         ["FreeSlots"] = ["空き枠がこの数以下なら売却へ（0＝満杯時）", "Sell when free slots are at or below (0 = full)", "Verkaufen bei höchstens so vielen freien Plätzen (0 = voll)", "Vendre si places libres ≤ ce nombre (0 = plein)", "빈칸이 이 수 이하이면 판매 (0 = 가득 참)", "空位不超过此数量时出售（0＝已满）", "空位不超過此數量時出售（0＝已滿）"],
@@ -89,6 +106,6 @@ internal static class Texts
         ["Error"] = ["停止：状態・依存プラグイン・所持品を確認してください。詳細はログに記録しました。", "Stopped: check state, dependencies and inventory. Details are in the log.", "Gestoppt: Status, Abhängigkeiten und Inventar prüfen. Details im Protokoll.", "Arrêt : vérifier l’état, les dépendances et l’inventaire. Détails dans le journal.", "중지: 상태, 의존 플러그인과 소지품을 확인하세요. 자세한 내용은 로그에 있습니다.", "已停止：请检查状态、依赖插件和背包。详情已记录到日志。", "已停止：請檢查狀態、依賴外掛和背包。詳情已記錄到日誌。"]
     };
     public static string Get(string key, string? code) => Text.TryGetValue(key, out var row) ? row[Array.IndexOf(Codes, code) is >= 0 and var index ? index : 1] : key;
-    public static string FontText => string.Concat(Text.Values.SelectMany(x => x)) + string.Concat(Codes) + new string(Enumerable.Range(32, 95).Select(x => (char)x).ToArray());
+    public static string FontText => "\u25B6\u25A0\u2016" + string.Concat(Text.Values.SelectMany(x => x)) + string.Concat(Codes) + new string(Enumerable.Range(32, 95).Select(x => (char)x).ToArray());
     public static void Validate() { if (Text.Any(x => x.Value.Length != 7 || x.Value.Any(string.IsNullOrWhiteSpace))) throw new InvalidOperationException("Incomplete translations"); }
 }

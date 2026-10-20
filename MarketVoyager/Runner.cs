@@ -32,6 +32,15 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     private int listingRetries;
     private bool waitingReconnect;
     private DateTime deadline, next;
+    private readonly RunPause pause = new();
+    public bool PauseRequested => pause.Requested;
+    public bool IsPaused => pause.Paused;
+    public void TogglePause()
+    {
+        if (!Running) return;
+        deadline += pause.Toggle(DateTime.UtcNow);
+        next = DateTime.UtcNow;
+    }
     public Phase State { get; private set; }
     public bool Running => State is >= Phase.Travel and <= Phase.SellResult;
     public string CurrentWorld => world.Name ?? "";
@@ -40,6 +49,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     public void Start()
     {
         if (Running) return;
+        pause.Reset();
         try
         {
             if (config.Pending != null || config.PendingSale != null || !travel.Ready || travel.Busy || !client.IsLoggedIn || client.TerritoryType != 129 || player.ContentId == 0)
@@ -109,6 +119,8 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         next = DateTime.UtcNow.AddMilliseconds(250);
         try
         {
+            if (pause.Enter(State is Phase.Search or Phase.Select or Phase.Listings or Phase.SellPick,
+                config.Pending != null || config.PendingSale != null, ownsMovement || ownsTravel, DateTime.UtcNow)) return;
             if (config.Pending != null && !client.IsLoggedIn)
             {
                 if (!waitingReconnect) { waitingReconnect = true; deadline = DateTime.UtcNow.AddSeconds(120); }
@@ -180,6 +192,12 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                         if (ReconcileInventory()) break;
                         if (!market.Read(rule.ItemId, character).Contains(offer))
                             throw new InvalidOperationException("Original listing unavailable; purchase outcome remains unresolved");
+                        if (pause.Requested)
+                        {
+                            // Refreshed unchanged listing and inventory establish that this attempt did not complete.
+                            // Pause before retrying the purchase.
+                            config.Pending = null; attempted.Remove(offer.Id); save(); Set(Phase.Search); break;
+                        }
                         if (NativeSales.FreeSlots() == 0 && activeList.AutoSell)
                         {
                             // A fresh listing still exists and inventory is unchanged: no purchase was completed.
@@ -337,6 +355,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     private void Fail(Exception ex) { log.Error(ex, "Market Voyager stopped after bounded same-listing retries"); Stop(Phase.Error); }
     public void Stop(Phase result = Phase.Stopped)
     {
+        pause.Reset();
         State = result;
         try { if (ownsMovement) travel.StopMove(); } catch (Exception ex) { log.Warning(ex, "Stop movement failed"); }
         try { if (ownsTravel) travel.AbortTravel(); } catch (Exception ex) { log.Warning(ex, "Stop travel failed"); }

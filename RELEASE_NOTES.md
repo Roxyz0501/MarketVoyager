@@ -1,14 +1,12 @@
-Market Voyager 1.0.0.0 — public preview
+Market Voyager 1.0.1.0 — public preview
 
-New standalone plugin by Roxyz0501, separate from Market Sweep.
+- Rebuilt the shopping list as an editable one-item-per-row table with frozen headers/name columns, search and paging.
+- Separated registration into an Add items tab: search/select, set price/quantity/quality, then add. NPC-based pricing is expandable.
+- Added persistent top Start / Pause or Resume / Stop controls. Pause waits for the current movement or transaction to be reconciled, then resumes the same tour without using paused time as a timeout.
+- Single-item and selected/all-row operations for price, quantity, quality, NPC price minus margin, purchased-count reset and removal. Dedicated bulk NPC pricing only updates price and tax inclusion.
+- Moved auto-sale and list naming into List settings; preserved saved lists, counters, sale ledger and required shared tabs.
+- Gil Ledger (Roxyz0501, MIT) was referenced for table/filter layout concepts; no UI source file copied.
 
-- Multiple world-tour shopping lists; inclusive unit caps with optional actual tax, cumulative quantity caps, HQ/NQ/Any.
-- Local catalogue by market category, name/ID, minimum NPC resale price, and several sort orders. Multi-select or add all results; batch edits and selective/all purchased-count reset.
-- Set a tax-inclusive cap from the conservative NQ NPC resale price minus a gil margin.
-- Optional per-list NPC auto-sale at a free-slot threshold (0 means full), followed by return to the same world's market and resumption. Sales never reduce purchased counts. Only fully accounted stacks of plugin-acquired unsold items are eligible.
-- Normal game UI purchase and sale actions; no direct purchase packets. Inventory reconciliation, bounded same-listing retries and listing-fetch reopening.
-- Lifestream and vnavmesh required; configuration shows loaded state. Seven UI languages, canonical language/support tabs and original icon.
+Validation: Release build 0 warnings/errors; 931 core assertions; 800 ImGui/glyph/lifecycle/controller checks and 30 offline renders. Unchanged views write zero config files.
 
-Validation: clean Release with no warnings/errors; 922 core assertions; 772 native ImGui/glyph/lifecycle checks and 28 offline renders.
-
-Limitations: actual in-game purchases, vendor selling, warnings, return/resume route, search UI and travel remain unverified. Cross-logical-DC aetheryte travel needs a compatible Lifestream version. This is a public preview. No installed plugin binaries were replaced.
+Actual in-game purchases, sales, pause/resume, travel and warning handling remain unverified. Lifestream/vnavmesh requirements and cross-logical-DC compatibility limitations remain. This is a public preview.
