@@ -1,5 +1,17 @@
 # Market Voyager publication state
 
+## 2026-10-21 — Market Voyager 1.0.1.6 configurable wait and list deletion
+
+- Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.6
+- ZIP: https://github.com/Roxyz0501/MarketVoyager/releases/download/v1.0.1.6/MarketVoyager-1.0.1.6.zip
+- Source/tag: `c665015bbf20f6364c6b64ce1c88481629a510b0`.
+- ZIP: 510,515 bytes; SHA-256 `ED285F20C6484BD7CDE69645873D180B17C8D60911847BB71443ABE6C866FCA3`; eight allowlisted files.
+- Purchase delay is persisted and editable in Settings, 50–2000ms, default/legacy fallback 100ms, with a reset button. Live changes apply to subsequent purchase scheduling. Checkbox minimum 250ms, inventory reconciliation, error backoffs and timeouts remain.
+- List settings offers inline-confirmed whole-list deletion while stopped. Other lists are retained; deleting the final list creates an empty list. Both unresolved purchase/sale ledgers survive deletion and restart until reconciliation.
+- Clean Release zero warnings/errors; 943 core assertions, 542 native checks, 1005 UI/glyph/lifecycle checks and 39 renders. Delay bounds/migration/persistence and all five phases at four delays tested; whole-list deletion, pending ledgers and last-list fallback tested. Japanese settings/confirmation images inspected; canonical tabs and source/package scans passed.
+- Public repository/icon HTTP 200 (image/png); anonymous ZIP hash/metadata verified. Shared index `de96201b851e54c7abb221758e672bf50c0bc4a3`, connector and pinned raw URL verified 1.0.1.6; 12 other entries preserved. Main raw initially cached 1.0.1.5.
+- Published under standing authorization using connector for source/index/records, CLI only for unsupported release/assets and local history sync. No game input or installed DLL replacement. Actual in-game timing remains unverified.
+
 ## 2026-10-21 — Market Voyager 1.0.1.5 closer market access and faster purchasing
 
 - Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.5
