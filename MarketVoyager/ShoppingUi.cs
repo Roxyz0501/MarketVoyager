@@ -29,7 +29,7 @@ public sealed partial class Plugin
     private BatchOptions Options(bool editing = false) => new(batchPrice, batchQuantity, (Quality)batchQuality,
         batchTax, npcMode, margin, !editing || setPrice, !editing || setQuantity, !editing || setQuality);
     private void ApplyResult(BatchResult result) { batchMessage = result; if (result.Changed > 0) Save(); }
-    private bool EditingLocked => runner.Running;
+    private bool EditingLocked => runner.Running && !runner.IsPaused;
     private bool LedgerLocked(Guid id) => config.HasPending(id);
     private void RemoveRows(ShoppingList list, IReadOnlySet<Guid> ids)
     {
@@ -52,7 +52,7 @@ public sealed partial class Plugin
     }
     private void DrawTransport()
     {
-        ImGui.BeginDisabled(EditingLocked || config.Pending != null || config.PendingSale != null || !travel.Ready || config.Lists[config.Selected].Items.Count == 0);
+        ImGui.BeginDisabled(runner.Running || config.Pending != null || config.PendingSale != null || !travel.Ready || config.Lists[config.Selected].Items.Count == 0);
         if (ImGui.Button("\u25B6 " + T("Run") + "###Run")) runner.Start();
         ImGui.EndDisabled(); ImGui.SameLine();
         ImGui.BeginDisabled(!runner.Running);

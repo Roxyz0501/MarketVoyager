@@ -41,12 +41,29 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     private bool waitingReconnect;
     private DateTime deadline, next;
     private readonly RunPause pause = new();
+    private bool restartAfterResume;
     public bool PauseRequested => pause.Requested;
     public bool IsPaused => pause.Paused;
     public void TogglePause()
     {
         if (!Running) return;
+        if (pause.Paused)
+        {
+            try
+            {
+                if (config.Pending != null || config.PendingSale != null || ownsMovement || ownsTravel)
+                    throw new InvalidOperationException("Cannot apply paused edits during an unresolved action");
+                LoadRules();
+                index = 0; retries = listingRetries = 0; attempted.Clear();
+                evaluated = false; OfferCount = null; CandidateCount = 0; EvaluatedItem = 0;
+                skipSaleUntilPurchase = false;
+                if (rules.Count == 0) { Stop(Phase.Done); return; }
+                restartAfterResume = true;
+            }
+            catch (Exception ex) { Fail(ex); return; }
+        }
         deadline += pause.Toggle(DateTime.UtcNow);
+        if (restartAfterResume) deadline = DateTime.UtcNow.AddSeconds(State == Phase.WalkToAetheryte ? 120 : 30);
         next = DateTime.UtcNow;
     }
     public Phase State { get; private set; }
@@ -67,17 +84,9 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
             var aether = objects.Where(x => x.ObjectKind == ObjectKind.Aetheryte && x.BaseId == 8).FirstOrDefault();
             if (aether == null || objects.LocalPlayer == null || Vector3.Distance(objects.LocalPlayer.Position, aether.Position) > 25)
                 throw new InvalidOperationException("Start beside the Limsa main aetheryte");
-            activeList = config.Lists[config.Selected];
             skipSaleUntilPurchase = false;
-            rules = activeList.Items.Where(x => x.Purchased < x.QuantityLimit).ToList();
-            if (rules.Count == 0 || rules.Any(x => x.UnitLimit < 1 || x.QuantityLimit < 1 || x.Purchased < 0 || !data.GetExcelSheet<Item>().TryGetRow(x.ItemId, out var item) || item.ItemSearchCategory.RowId == 0))
-                throw new InvalidOperationException("Invalid shopping list");
-            foreach (var rule in rules)
-                if (!data.GetExcelSheet<Item>().GetRow(rule.ItemId).CanBeHq) rule.Quality = Quality.Nq;
-            for (int i = 0; i < rules.Count; i++)
-                for (int j = i + 1; j < rules.Count; j++)
-                    if (Rules.Overlaps(rules[i], rules[j], data.GetExcelSheet<Item>().GetRow(rules[i].ItemId).CanBeHq))
-                        throw new InvalidOperationException("Overlapping item and quality rules");
+            LoadRules();
+            if (rules.Count == 0) throw new InvalidOperationException("Empty shopping list");
             save();
             character = player.ContentId;
             worlds.Clear();
@@ -90,6 +99,35 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
             NextWorld();
         }
         catch (Exception ex) { Fail(ex); }
+    }
+
+    private void LoadRules()
+    {
+        if (config.Selected < 0 || config.Selected >= config.Lists.Count) throw new InvalidOperationException("Invalid list selection");
+        var selected = config.Lists[config.Selected];
+        var updated = selected.Items.Where(x => x.Purchased < x.QuantityLimit).ToList();
+        var sheet = data.GetExcelSheet<Item>();
+        Dictionary<uint, bool> qualities = [];
+        foreach (var rule in updated)
+        {
+            if (rule.UnitLimit < 1 || rule.QuantityLimit < 1 || rule.Purchased < 0 || !Enum.IsDefined(rule.Quality) ||
+                !sheet.TryGetRow(rule.ItemId, out var item) || item.ItemSearchCategory.RowId == 0)
+                throw new InvalidOperationException("Invalid shopping list");
+            qualities[rule.ItemId] = item.CanBeHq;
+        }
+        foreach (var group in updated.GroupBy(x => x.ItemId))
+        {
+            var rows = group.ToArray();
+            for (int i = 0; i < rows.Length; i++)
+                for (int j = i + 1; j < rows.Length; j++)
+                    if (Rules.Overlaps(rows[i], rows[j], qualities[group.Key]))
+                        throw new InvalidOperationException("Overlapping item and quality rules");
+        }
+        bool normalized = false;
+        foreach (var rule in updated)
+            if (!qualities[rule.ItemId] && rule.Quality != Quality.Nq) { rule.Quality = Quality.Nq; normalized = true; }
+        activeList = selected; rules = updated;
+        if (normalized) save();
     }
 
     private void Set(Phase phase, int seconds = 30)
@@ -176,6 +214,22 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                 throw new TimeoutException($"{State}: {market.Diagnostics()}");
             }
             if (!travel.Ready) throw new InvalidOperationException("Dependency unloaded");
+            if (restartAfterResume)
+            {
+                if (!client.IsLoggedIn || player.ContentId != character || client.TerritoryType != 129 ||
+                    player.CurrentWorld.RowId != (State == Phase.WalkToAetheryte ? sourceWorld : world.Id))
+                    throw new InvalidOperationException("Character or location changed while paused");
+                restartAfterResume = false;
+                if (State == Phase.WalkToAetheryte) { /* Keep the already queued next world. */ }
+                else if (State == Phase.SellPick && activeList.AutoSell) { /* Resume selling against the edited list. */ }
+                else
+                {
+                    if (State == Phase.SellPick) sales.Close();
+                    market.CloseResults();
+                    if (market.Visible("ItemSearch")) Set(Phase.Search); else BeginWalk();
+                    return;
+                }
+            }
             if (State == Phase.WalkToAetheryte)
             {
                 if (!client.IsLoggedIn || player.ContentId != character || player.CurrentWorld.RowId != sourceWorld || client.TerritoryType != 129)
@@ -426,6 +480,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     public void Stop(Phase result = Phase.Stopped)
     {
         pause.Reset();
+        restartAfterResume = false;
         bool cancelUnsent = Running && config.Pending is { Submitted: false } && State == Phase.Confirm;
         State = result;
         if (cancelUnsent)

@@ -184,6 +184,48 @@ unsafe class Program
    Dummy.ActiveAetheryte=8; change.Invoke(travel,["TestWorld"]);
    Check(Dummy.TravelRequests==1 && Dummy.TravelArgs is {Length:7} && Equals(Dummy.TravelArgs[1],false) && Equals(Dummy.TravelArgs[6],false),
        "arrival permits only aetheryte world route, with no return teleport");
+   var resumeRows=game.GetExcelSheet<Lumina.Excel.Sheets.Item>()!.Where(x=>x.ItemSearchCategory.RowId!=0 && x.CanBeHq).Take(4).ToArray();
+   var edited=new BuyRule {ItemId=resumeRows[0].RowId,UnitLimit=1000,QuantityLimit=20,Purchased=3};
+   var removed=new BuyRule {ItemId=resumeRows[1].RowId,QuantityLimit=10};
+   var capped=new BuyRule {ItemId=resumeRows[2].RowId,QuantityLimit=10,Purchased=4};
+   var editingList=new ShoppingList {Items=[edited,removed,capped]};
+   var replacement=new ShoppingList {Items=[new(){ItemId=resumeRows[3].RowId,QuantityLimit=10}]};
+   Dummy.Config.Lists=[editingList,replacement]; Dummy.Config.Selected=0;
+   var loadRules=runnerType.GetMethod("LoadRules",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   var ruleField=runnerType.GetField("rules",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   var indexField=runnerType.GetField("index",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   var editingLock=type.GetProperty("EditingLocked",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   void PauseAt(string phase) {
+    runnerType.GetMethod("Stop")!.Invoke(runner,[Enum.Parse(state.PropertyType,"Stopped")]);
+    state.SetValue(runner,Enum.Parse(state.PropertyType,phase));
+    runnerType.GetMethod("TogglePause")!.Invoke(runner,null);
+    Check((bool)editingLock.GetValue(plugin)!,"requesting pause alone cannot unlock editing");
+    runnerType.GetMethod("Tick")!.Invoke(runner,null);
+    Check((bool)runnerType.GetProperty("IsPaused")!.GetValue(runner)! && !(bool)editingLock.GetValue(plugin)!,"safe pause unlocks editing");
+   }
+   loadRules.Invoke(runner,null); indexField.SetValue(runner,2); PauseAt("Listings");
+   edited.UnitLimit=200; edited.QuantityLimit=30; edited.Quality=Quality.Hq; edited.IncludeTax=true;
+   capped.QuantityLimit=4;
+   remove.Invoke(plugin,[editingList,new HashSet<Guid>{removed.Id}]);
+   var added=new BuyRule {ItemId=resumeRows[3].RowId,QuantityLimit=10};
+   editingList.Items.Add(added);
+   runnerType.GetMethod("TogglePause")!.Invoke(runner,null);
+   var resumed=(List<BuyRule>)ruleField.GetValue(runner)!;
+   Check(resumed.SequenceEqual(new[]{edited,added}) && (int)indexField.GetValue(runner)! == 0,"resume rebuilds added/removed/capped rules and starts from beginning");
+   Check(edited.Purchased==3 && capped.Purchased==4,"resume preserves purchased counts");
+   Check(Rules.Eligible(resumed[0],new Offer(1,edited.ItemId,190,2,20,true),true) && !Rules.Eligible(resumed[0],new Offer(2,edited.ItemId,190,2,21,true),true) && !Rules.Eligible(resumed[0],new Offer(3,edited.ItemId,190,2,0,false),true),"edited tax-inclusive cap and quality govern resumed eligibility");
+   Check((bool)runnerType.GetField("restartAfterResume",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(runner)! && (bool)editingLock.GetValue(plugin)!,"resume schedules a fresh search and relocks editing");
+   PauseAt("Search"); deleteList.Invoke(plugin,[editingList]);
+   runnerType.GetMethod("TogglePause")!.Invoke(runner,null);
+   Check(ReferenceEquals(runnerType.GetField("activeList",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(runner),replacement) && ((List<BuyRule>)ruleField.GetValue(runner)!).SequenceEqual(replacement.Items),"deleting the paused active list resumes the newly selected list");
+   PauseAt("Select"); deleteList.Invoke(plugin,[replacement]);
+   runnerType.GetMethod("TogglePause")!.Invoke(runner,null);
+   Check(state.GetValue(runner)!.ToString()=="Done" && !(bool)runnerType.GetProperty("Running")!.GetValue(runner)!,"empty replacement ends without buying stale rules");
+   Dummy.Config.Lists[0].Items=[new(){ItemId=resumeRows[0].RowId,QuantityLimit=10}];
+   PauseAt("Search");
+   Dummy.Config.Lists[0].Items.Add(new(){ItemId=resumeRows[0].RowId,QuantityLimit=10});
+   runnerType.GetMethod("TogglePause")!.Invoke(runner,null);
+   Check(state.GetValue(runner)!.ToString()=="Error","resume rejects overlapping edited rules before any purchase");
   }
   Check(Dummy.Subscriptions==0,"Unsubscribes events"); Check(Dummy.Commands.Count==0,"Removes command");
   ImGui.DestroyContext(); foreach(var pin in Dummy.Pins) pin.Free();
