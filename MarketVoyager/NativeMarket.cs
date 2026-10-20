@@ -8,10 +8,12 @@ namespace MarketVoyager;
 
 internal sealed unsafe class NativeMarket(IGameGui gui)
 {
+    private nint notifiedInput;
+    private string notifiedText = "";
     public bool Visible(string name) { var a = gui.GetAddonByName<AtkUnitBase>(name); return a != null && a->IsVisible && a->IsReady; }
     private InfoProxyItemSearch* Proxy => InfoModule.Instance() == null ? null : InfoModule.Instance()->GetInfoProxyItemSearch();
-    public void CloseResults() { var a = gui.GetAddonByName<AtkUnitBase>("ItemSearchResult"); if (a != null && a->IsVisible) a->Close(true); }
-    public void CloseMarket() { CloseResults(); var a = gui.GetAddonByName<AtkUnitBase>("ItemSearch"); if (a != null && a->IsVisible) a->Close(true); }
+    public void CloseResults() { notifiedInput = 0; var a = gui.GetAddonByName<AtkUnitBase>("ItemSearchResult"); if (a != null && a->IsVisible) a->Close(true); }
+    public void CloseMarket() { notifiedInput = 0; notifiedText = ""; CloseResults(); var a = gui.GetAddonByName<AtkUnitBase>("ItemSearch"); if (a != null && a->IsVisible) a->Close(true); }
     public string Diagnostics()
     {
         var a = gui.GetAddonByName<AddonItemSearch>("ItemSearch");
@@ -33,10 +35,23 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
         // The normal search button owns the transition into name-search mode.
         if (a->SearchTextInput->EvaluatedString.ToString() != name)
         {
+            notifiedInput = 0;
             a->SearchTextInput->SetText(name);
-            return false; // Let the ordinary input-change callback update the button first.
+        }
+        if (notifiedInput != (nint)a->SearchTextInput || notifiedText != name)
+        {
+            if (!NotifyTextChanged(&a->AtkUnitBase, a->SearchTextInput)) return false;
+            notifiedInput = (nint)a->SearchTextInput; notifiedText = name;
+            return false; // Observe the callback's ordinary button update on the next tick.
         }
         return Click(&a->AtkUnitBase, a->SearchButton);
+    }
+    internal static bool NotifyTextChanged(AtkUnitBase* owner, AtkComponentTextInput* input)
+    {
+        if (owner == null || input == null || input->OwnerAddon != owner || input->Callback == null) return false;
+        input->Callback(owner, InputCallbackType.TextChanged, input->RawString.StringPtr,
+            input->EvaluatedString.StringPtr, input->CallbackEventKind);
+        return true;
     }
     internal static bool CanEnterSearch(AddonItemSearch* a) =>
         a != null && a->IsVisible && a->IsReady && a->SearchTextInput != null;
@@ -97,19 +112,45 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
         var p = Proxy->LastPurchasedMarketboardItem;
         return p.ListingId == offer.Id && p.ItemId == offer.Item && p.Quantity == offer.Quantity && p.UnitPrice == offer.Price && p.TotalTax == offer.Tax && p.IsHqItem == offer.Hq;
     }
-    // Caller already owns the purchase dialog, validates selected listing and waits between actions.
-    public int Confirm(Offer offer, string itemName)
+    public bool SelectedMatches(Offer offer)
+    {
+        if (!Visible("ItemSearchResult")) return false;
+        return SelectedMatches(AgentItemSearch.Instance(), Proxy, offer);
+    }
+    internal static bool SelectedMatches(AgentItemSearch* agent, InfoProxyItemSearch* proxy, Offer offer)
+    {
+        if (agent == null || proxy == null || agent->ResultItemId != offer.Item || proxy->SearchItemId != offer.Item ||
+            proxy->ListingCount > 100 || agent->ResultSelectedIndex >= proxy->ListingCount) return false;
+        var row = proxy->Listings[(int)agent->ResultSelectedIndex];
+        return row.ListingId == offer.Id && row.ItemId == offer.Item && row.Quantity == offer.Quantity &&
+            row.UnitPrice == offer.Price && row.TotalTax == offer.Tax && row.IsHqItem == offer.Hq &&
+            !row.IsMannequin && !row.IsSellingAsSet;
+    }
+    public bool CancelConfirmation(Offer offer)
     {
         var a = gui.GetAddonByName<AddonSelectYesno>("SelectYesno");
-        if (a == null || !Visible("SelectYesno") || a->PromptText == null || !Matches(offer)) return 0;
-        // Unknown warnings are never blanket-accepted. Require the exact game item name.
+        return a != null && Visible("SelectYesno") && SelectedMatches(offer) &&
+            a->PromptText != null && PurchasePrompt(a->PromptText->NodeText.ToString()) &&
+            Click(&a->AtkUnitBase, a->NoButton);
+    }
+    internal static bool PurchasePrompt(string prompt) =>
+        new[] { "購入", "買います", "装備でき", "purchase", "buy", "cannot equip", "unable to equip",
+            "acheter", "achat", "équiper", "kaufen", "kauf", "ausrüsten", "구매", "구입", "购买", "購買" }
+            .Any(marker => prompt.Contains(marker, StringComparison.OrdinalIgnoreCase));
+    // Caller already owns the purchase dialog, validates selected listing and waits between actions.
+    public int Confirm(Offer offer, string itemName, Action beforePurchase)
+    {
+        var a = gui.GetAddonByName<AddonSelectYesno>("SelectYesno");
+        // LastPurchasedMarketboardItem is populated by the game's accept handler,
+        // after this dialog. Before acceptance validate the selected row instead.
+        if (a == null || !Visible("SelectYesno") || a->PromptText == null || !SelectedMatches(offer)) return 0;
         var prompt = a->PromptText->NodeText.ToString();
         bool itemPrompt = prompt.Contains(itemName, StringComparison.Ordinal);
         var check = a->ConfirmCheckBox;
         bool hasCheckbox = check != null && check->OwnerNode != null && check->OwnerNode->AtkResNode.IsVisible();
         bool equipmentWarning = hasCheckbox && new[] { "装備でき", "装備することができ", "cannot equip", "unable to equip", "équiper", "equiper", "ausrüsten", "ausruesten" }
             .Any(marker => prompt.Contains(marker, StringComparison.OrdinalIgnoreCase));
-        if (!itemPrompt && !equipmentWarning) return 0;
+        if (!itemPrompt && !equipmentWarning && !PurchasePrompt(prompt)) return 0;
         if (check != null && check->OwnerNode != null && check->OwnerNode->AtkResNode.IsVisible() && !check->IsChecked)
         {
             if (!check->IsEnabled) return 0;
@@ -119,14 +160,15 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
             a->AtkUnitBase.ReceiveEvent(ev->State.EventType, (int)ev->Param, ev, &data);
             return 1;
         }
-        return Click(&a->AtkUnitBase, a->YesButton) ? 2 : 0;
+        return Click(&a->AtkUnitBase, a->YesButton, beforePurchase) ? 2 : 0;
     }
-    internal static bool Click(AtkUnitBase* addon, AtkComponentButton* button)
+    internal static bool Click(AtkUnitBase* addon, AtkComponentButton* button, Action? beforeClick = null)
     {
-        if (button == null || !button->IsEnabled || button->OwnerNode == null || !button->OwnerNode->AtkResNode.IsVisible()) return false;
+        if (addon == null || button == null || button->OwnerNode == null || !button->IsEnabled || !button->OwnerNode->AtkResNode.IsVisible()) return false;
         var ev = FindButtonClick(addon, (AtkEvent*)button->OwnerNode->AtkResNode.AtkEventManager.Event);
         if (ev == null) return false;
         AtkEventData data = default;
+        beforeClick?.Invoke();
         addon->ReceiveEvent(ev->State.EventType, (int)ev->Param, ev, &data);
         return true;
     }

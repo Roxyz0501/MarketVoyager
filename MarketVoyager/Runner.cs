@@ -115,7 +115,15 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     }
     public void Tick()
     {
-        if (!Running || DateTime.UtcNow < next) return;
+        if (DateTime.UtcNow < next) return;
+        if (!Running)
+        {
+            if (config.Pending == null) return;
+            next = DateTime.UtcNow.AddSeconds(1);
+            try { ResolveStoppedPurchase(false, false); }
+            catch (Exception ex) { log.Warning(ex, "Stopped purchase reconciliation failed"); next = DateTime.UtcNow.AddSeconds(30); }
+            return;
+        }
         next = DateTime.UtcNow.AddMilliseconds(250);
         try
         {
@@ -218,7 +226,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                     // Persist the reservation BEFORE any purchase interaction. Never blindly retry.
                     config.Pending = new() { RuleId = rule.Id, ListingId = offer.Id, ItemId = offer.Item,
                         Quantity = offer.Quantity, WorldId = world.Id, CharacterId = character, Hq = offer.Hq,
-                        InventoryBefore = InventoryManager.Instance()->GetInventoryItemCount(offer.Item, offer.Hq, false, false) };
+                        InventoryBefore = InventoryManager.Instance()->GetInventoryItemCount(offer.Item, offer.Hq, false, false), Submitted = false };
                     retries = 0;
                     save(); attempted.Add(offer.Id);
                     if (!market.SelectOffer(offer, character))
@@ -234,7 +242,10 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                         throw new InvalidOperationException("Insufficient gil before confirmation");
                     // Mark Result before the click so a synchronous purchase event cannot be lost.
                     State = Phase.Result;
-                    var action = market.Confirm(offer, item.Name.ToString());
+                    var action = market.Confirm(offer, item.Name.ToString(), () => {
+                        if (config.Pending == null) throw new InvalidOperationException("Missing purchase reservation");
+                        config.Pending.Submitted = true; save();
+                    });
                     if (action == 2) { if (State == Phase.Result) Set(Phase.Result, 20); }
                     else { State = Phase.Confirm; next = DateTime.UtcNow.AddSeconds(1); }
                     break;
@@ -268,6 +279,17 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         config.Pending = null; save(); Set(market.Visible("ItemSearchResult") ? Phase.Listings : Phase.Search);
         next = DateTime.UtcNow.AddSeconds(2);
         return true;
+    }
+    public bool ResolveStoppedPurchase(bool confirmedNotPurchased, bool countUnresolved)
+    {
+        var pending = config.Pending;
+        if (Running || pending == null || !client.IsLoggedIn || player.ContentId != pending.CharacterId ||
+            InventoryManager.Instance() == null) return false;
+        var rule = config.Lists.SelectMany(x => x.Items).SingleOrDefault(x => x.Id == pending.RuleId);
+        if (rule == null) return false;
+        int count = InventoryManager.Instance()->GetInventoryItemCount(pending.ItemId, pending.Hq, false, false);
+        if (!PurchaseRecovery.Resolve(rule, pending, count, market.Visible("SelectYesno"), confirmedNotPurchased, countUnresolved)) return false;
+        config.Pending = null; save(); return true;
     }
     private bool CheckSpace()
     {
@@ -358,7 +380,17 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     public void Stop(Phase result = Phase.Stopped)
     {
         pause.Reset();
+        bool cancelUnsent = Running && config.Pending is { Submitted: false } && State == Phase.Confirm;
         State = result;
+        if (cancelUnsent)
+        {
+            try
+            {
+                if (market.CancelConfirmation(offer) && config.Pending is { } pending)
+                { pending.Cancelled = true; save(); }
+            }
+            catch (Exception ex) { log.Warning(ex, "Could not cancel unsubmitted purchase dialog"); }
+        }
         try { if (ownsMovement) travel.StopMove(); } catch (Exception ex) { log.Warning(ex, "Stop movement failed"); }
         try { if (ownsTravel) travel.AbortTravel(); } catch (Exception ex) { log.Warning(ex, "Stop travel failed"); }
         ownsMovement = ownsTravel = false;

@@ -116,3 +116,22 @@ var npcResult=Catalog.Edit(bulkNpc,bulkNpc.Items.Select(x=>x.Id).ToHashSet(),cat
 Check(npcResult.Changed==2 && bulkNpc.Items[0].UnitLimit==93 && bulkNpc.Items[1].UnitLimit==193 && bulkNpc.Items.All(x=>x.IncludeTax),"dedicated bulk NPC action applies item-specific tax-inclusive limits");
 Check(bulkNpc.Items[0].QuantityLimit==37 && bulkNpc.Items[1].QuantityLimit==45 && bulkNpc.Items[0].Quality==Quality.Hq && bulkNpc.Items[1].Quality==Quality.Any && bulkNpc.Items[0].Purchased==12 && bulkNpc.Items[1].Purchased==21,"bulk NPC action preserves quantities quality and purchased totals");
 Console.WriteLine($"Final suite: {checks} assertions passed.");
+
+var recoveryRule = new BuyRule { ItemId=42, Purchased=7, QuantityLimit=20 };
+Reservation Pending(bool? submitted=null) => new() { RuleId=recoveryRule.Id, ItemId=42, CharacterId=123, Quantity=5, Hq=true, InventoryBefore=10, Submitted=submitted };
+Check(!PurchaseRecovery.Resolve(recoveryRule, Pending(), 10, false, false, false), "legacy unknown purchase is not silently discarded");
+Check(!PurchaseRecovery.Resolve(recoveryRule, Pending(false), 10, false, false, false), "not submitted by plugin alone does not exclude manual purchase");
+var cancelled = Pending(false); cancelled.Cancelled=true;
+Check(!PurchaseRecovery.Resolve(recoveryRule, cancelled, 10, true, false, false), "wait for canceled dialog to close");
+Check(PurchaseRecovery.Resolve(recoveryRule, cancelled, 10, false, false, false) && recoveryRule.Purchased==7 && recoveryRule.Stock.Count==0, "confirmed cancellation unlocks without increasing purchased count");
+Check(!PurchaseRecovery.Resolve(recoveryRule, Pending(), 10, true, true, false), "manual no-purchase resolution requires closed dialog");
+Check(PurchaseRecovery.Resolve(recoveryRule, Pending(), 10, false, true, false) && recoveryRule.Purchased==7, "legacy not-purchased resolution preserves count");
+Check(!PurchaseRecovery.Resolve(recoveryRule, Pending(true), 12, false, true, false), "partial inventory change cannot be cleared as no purchase");
+Check(PurchaseRecovery.Resolve(recoveryRule, Pending(true), 15, false, false, false), "stopped successful purchase reconciles");
+Check(recoveryRule.Purchased==12 && recoveryRule.Stock.Single().Remaining==5 && recoveryRule.Stock[0].Hq, "stopped receipt credits purchased and resale stock exactly once");
+Check(PurchaseRecovery.Resolve(recoveryRule, Pending(), 10, false, false, true) && recoveryRule.Purchased==17 && recoveryRule.Stock.Single().Remaining==5, "conservative manual count cannot invent resale inventory");
+var mismatched = Pending(); mismatched.RuleId=Guid.NewGuid();
+Check(!PurchaseRecovery.Resolve(recoveryRule,mismatched,15,false,false,false), "wrong rule cannot consume reservation");
+var migrated = System.Text.Json.JsonSerializer.Deserialize<Reservation>("{\"ItemId\":42,\"Quantity\":5}")!;
+Check(migrated.Submitted==null && !migrated.Cancelled,"old reservations retain unknown submission status");
+Console.WriteLine($"With stopped-purchase recovery: {checks} assertions passed.");

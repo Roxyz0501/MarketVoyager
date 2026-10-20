@@ -95,10 +95,11 @@ public sealed partial class Plugin : IDalamudPlugin
             {
                 ImGui.TextWrapped(T("Pending"));
                 ImGui.TextUnformatted($"{pending.ItemId} / {(pending.Hq ? "HQ" : "NQ")} / {pending.Quantity}");
-                if (!runner.Running && player.ContentId == pending.CharacterId && ImGui.Button(T("CountPending")))
+                if (!runner.Running && player.ContentId == pending.CharacterId)
                 {
-                    var rule = config.Lists.SelectMany(x => x.Items).FirstOrDefault(x => x.Id == pending.RuleId);
-                    if (rule != null) { rule.Purchased = checked(rule.Purchased + (int)pending.Quantity); config.Pending = null; Save(); }
+                    ImGui.TextWrapped(T("RecoveryHelp"));
+                    if (ImGui.Button(T("NotPurchased"))) runner.ResolveStoppedPurchase(true, false);
+                    if (ImGui.Button(T("CountPending"))) runner.ResolveStoppedPurchase(false, true);
                 }
             }
             if (config.PendingSale is { } sale)

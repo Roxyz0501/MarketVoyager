@@ -25,10 +25,11 @@ public sealed partial class Plugin
     private BatchOptions Options(bool editing = false) => new(batchPrice, batchQuantity, (Quality)batchQuality,
         batchTax, npcMode, margin, !editing || setPrice, !editing || setQuantity, !editing || setQuality);
     private void ApplyResult(BatchResult result) { batchMessage = result; if (result.Changed > 0) Save(); }
-    private bool EditingLocked => runner.Running || config.Pending != null || config.PendingSale != null;
+    private bool EditingLocked => runner.Running;
+    private bool LedgerLocked(Guid id) => config.Pending?.RuleId == id || config.PendingSale?.RuleId == id;
     private void DrawTransport()
     {
-        ImGui.BeginDisabled(EditingLocked || !travel.Ready || config.Lists[config.Selected].Items.Count == 0);
+        ImGui.BeginDisabled(EditingLocked || config.Pending != null || config.PendingSale != null || !travel.Ready || config.Lists[config.Selected].Items.Count == 0);
         if (ImGui.Button("\u25B6 " + T("Run") + "###Run")) runner.Start();
         ImGui.EndDisabled(); ImGui.SameLine();
         ImGui.BeginDisabled(!runner.Running);
@@ -172,10 +173,14 @@ public sealed partial class Plugin
             ImGui.BeginDisabled(selectedRules.Count == 0);
             if (ImGui.MenuItem(T("BatchEdit"))) { ImGui.CloseCurrentPopup(); openBatch = true; }
             if (ImGui.MenuItem(T("SetNpc"))) { ImGui.CloseCurrentPopup(); openNpcBatch = true; }
+            ImGui.BeginDisabled(selectedRules.Any(LedgerLocked));
             if (ImGui.MenuItem(T("ResetSelected"))) { if (Catalog.Reset(list, selectedRules) > 0) Save(); }
             if (ImGui.MenuItem(T("RemoveSelected"))) { list.Items.RemoveAll(x => selectedRules.Contains(x.Id)); selectedRules.Clear(); Save(); }
+            ImGui.EndDisabled();
             ImGui.EndDisabled(); ImGui.Separator();
+            ImGui.BeginDisabled(list.Items.Any(x => LedgerLocked(x.Id)));
             if (ImGui.MenuItem(T("Reset"))) { if (Catalog.Reset(list, list.Items.Select(x => x.Id).ToHashSet()) > 0) Save(); }
+            ImGui.EndDisabled();
             ImGui.EndPopup();
         }
         if (openBatch)
@@ -265,8 +270,10 @@ public sealed partial class Plugin
                         else batchMessage = new(0, 0, "InvalidBatch");
                     }
                     ImGui.Separator();
+                    ImGui.BeginDisabled(LedgerLocked(rule.Id));
                     if (ImGui.MenuItem(T("Reset"))) { if (Catalog.Reset(list, new HashSet<Guid> { rule.Id }) > 0) Save(); }
                     if (ImGui.MenuItem(T("Remove"))) remove = rule.Id;
+                    ImGui.EndDisabled();
                     ImGui.EndPopup();
                 }
                 ImGui.PopID();

@@ -2,9 +2,11 @@
 
 Roxyz0501による新規独立Dalamudプラグイン。購入リストに沿ってリムサを拠点にワールドを巡回し、通常のマーケットUIから購入します。Market Sweepとは別のプラグインです。
 
-**1.0.1.2は公開プレビューです。** ビルド・購入条件・所持数照合・バックグラウンドUI描画を検証済みですが、ゲーム内での実際の移動、検索、購入、NPC売却・復帰、警告確認、DC切替は未検証です。通常UIの構造や連携プラグインの対応状況により停止する場合があります。
+**1.0.1.3は公開プレビューです。** ビルド・購入条件・所持数照合・バックグラウンドUI描画を検証済みですが、ゲーム内での実際の移動、検索、購入、NPC売却・復帰、警告確認、DC切替は未検証です。通常UIの構造や連携プラグインの対応状況により停止する場合があります。
 
-1.0.1.2では、マーケットを開いた直後に検索モードの条件で名前入力へ進めなくなる処理を修正しました。検索ボタンのクリックイベント選択と出品一覧の読み込み完了判定も見直し、検索の再試行時には画面状態を診断ログへ記録します。
+1.0.1.3では、名前入力後の変更通知を追加し、検索ボタンが無効のままになる処理を修正しました。購入確認前は現在選択中の出品を照合します。停止後は未確認取引が残っていても設定を編集でき、当該行の削除・購入済み数リセットだけを保留します。
+
+前の版で未確認購入が残っている場合は、ゲームの購入確認画面を閉じ、所持品を確認して「購入していないことを確認して解除」を選べます。未購入なら購入済み数は増えません。所持数が予定分増えている場合は、停止後も購入済み数と自動売却対象へ計上します。新しい版で送信前の確認をキャンセルできた分は、自動照合後に解除します。
 
 ## 必須プラグイン
 
@@ -82,12 +84,13 @@ NPC価格−差額の専用一括操作は価格と税込設定だけを更新�
 ```powershell
 dotnet build MarketVoyager/MarketVoyager.csproj -c Release
 dotnet run --project Tests/Tests.csproj -c Release
+dotnet run --project Tests/Native/NativeTests.csproj -c Release
 dotnet run --project Tests/UI/UiTests.csproj -c Release -- '<game-directory>' 'artifacts/ui'
 ```
 
 ## 参照・ライセンス
 
-本プラグインはMIT。Lifestream (NightmareXIV) とvnavmesh (awgil/veyn) の公開IPC契約、DalamudとFFXIVClientStructsのUI型を参照しています。既存Market Sweepの通常UI購入方式も設計上参照しました。外部プラグイン本体のコードやバイナリは同梱しません。[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
+本プラグインはMIT。Lifestream (NightmareXIV) とvnavmesh (awgil/veyn) の公開IPC契約、DalamudとFFXIVClientStructsのUI型を参照しています。[Market Sweep](https://github.com/Roxyz0501/MarketSweep)（Roxyz0501、AGPL-3.0-only）の通常UI購入方式と購入確認の認識方法、[ECommons](https://github.com/NightmareXIV/ECommons)（NightmareXIV contributors、MIT）の登録済みUIイベント操作も設計上参照しました。これらの実装コードはコピーしていません。外部プラグイン本体のコードやバイナリは同梱しません。[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
 
 開発者Roxyz0501への任意の支援: [Ko-fi](https://ko-fi.com/roxyz0501)。支援の有無で機能は変わりません。
 

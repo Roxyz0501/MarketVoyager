@@ -37,6 +37,9 @@ public sealed class Reservation
     public ulong CharacterId { get; set; }
     public bool Hq { get; set; }
     public int InventoryBefore { get; set; }
+    // null preserves the uncertain submission state of reservations saved by older versions.
+    public bool? Submitted { get; set; }
+    public bool Cancelled { get; set; }
 }
 
 public static class Rules

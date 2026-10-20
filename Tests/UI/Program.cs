@@ -80,10 +80,23 @@ unsafe class Program
    Check(beforeBatch==System.Text.Json.JsonSerializer.Serialize(Dummy.Config.Lists[0]),"opening bulk editor preserves saved values and counters");
    Check(!(bool)type.GetField("setPrice",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)! && !(bool)type.GetField("setQuantity",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)! && !(bool)type.GetField("setQuality",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)!,"bulk edit initially changes no fields");
    int saves=Dummy.Saves; for(int i=0;i<20;i++) Frame(); Check(Dummy.Saves==saves,"Unchanged rendering writes zero config files");
+   io.AddKeyEvent(ImGuiKey.Escape,true); Frame(); io.AddKeyEvent(ImGuiKey.Escape,false); Frame();
+   io.AddMousePosEvent(1100,100); Frame(); io.AddMouseButtonEvent(0,true); Frame(); io.AddMouseButtonEvent(0,false); Frame();
+   var pendingRule=Dummy.Config.Lists[0].Items[0];
+   Dummy.Config.Pending=new(){RuleId=pendingRule.Id,ItemId=pendingRule.ItemId,Quantity=5,InventoryBefore=10};
+   Check(!(bool)type.GetProperty("EditingLocked",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)!,"stopped pending purchase does not lock settings");
+   Check((bool)type.GetMethod("LedgerLocked",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,[pendingRule.Id])!,"pending row deletion/reset remains protected");
+   Check(!(bool)type.GetMethod("LedgerLocked",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,[Dummy.Config.Lists[0].Items[1].Id])!,"unrelated row can be deleted/reset");
+   foreach(var language in new[]{"ja","en","de","fr","ko","zh-Hans","zh-Hant"}) {
+    Dummy.Config.Language=language; Frame(); Frame();
+    Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,language+"-stopped-pending.bmp"));
+   }
+   Check(Dummy.Saves==saves,"pending recovery UI does not save without action");
+   Dummy.Config.Pending=null;
   }
   Check(Dummy.Subscriptions==0,"Unsubscribes events"); Check(Dummy.Commands.Count==0,"Removes command");
   ImGui.DestroyContext(); foreach(var pin in Dummy.Pins) pin.Free();
-  Console.WriteLine($"PASS {checks} UI/glyph/lifecycle checks; 31 background renders.");
+  Console.WriteLine($"PASS {checks} UI/glyph/lifecycle checks; 38 background renders.");
  }
 }
 public unsafe class Dummy:DispatchProxy
