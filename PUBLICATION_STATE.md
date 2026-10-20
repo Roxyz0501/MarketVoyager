@@ -1,5 +1,21 @@
 # Market Voyager publication state
 
+## 2026-10-20 — Market Voyager 1.0.1.0 public preview
+
+- Published under the user's standing publication instruction. Repository: https://github.com/Roxyz0501/MarketVoyager
+- Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.0
+- ZIP: https://github.com/Roxyz0501/MarketVoyager/releases/download/v1.0.1.0/MarketVoyager-1.0.1.0.zip
+- Source/tag commit: `a1d983a9089dd1b0db268d56efd6d5e86b9e8a66`.
+- ZIP: 498,021 bytes; SHA-256 `05C4D883CA6BC47067E2C080B4ADA57E5091C083347ED6DF6B186E318333D782`; eight allowlisted files.
+- One-item-per-row editable grid, frozen header/name columns, separate simplified Add items tab, compact filters and list-settings popup. Referenced Gil Ledger's table/filter layout concepts (Roxyz0501, MIT); no UI source file copied.
+- Persistent top Start / Pause or Resume / Stop controls. Pause waits for an in-flight transaction/movement to resolve; resume excludes paused duration from deadlines and retains the tour cursor.
+- Single/selected/all-row price, quantity, quality, NPC-minus-margin price, reset and remove operations. Dedicated NPC batch action preserves quantity limits, quality, purchased counts and sale ledger.
+- Release build zero warnings/errors; 931 core assertions, 800 offline ImGui/glyph/lifecycle/controller checks, 30 renders. Production runner safe-boundary pause/resume invoked in offline host. Unchanged rendering saves zero config files.
+- Canonical tabs unchanged; source/binary credential and local-path scans passed. Public repo/icon HTTP 200, image/png; anonymous ZIP hash matched.
+- Shared index commit `d893ac9d704571a9e53a76c5f0a8e3bcd32386d3`: connector and pinned anonymous URL verified 13 entries with 1.0.1.0; all 12 other entries preserved. Normal main URL initially served cached 1.0.0.0.
+- Actual game purchase/sale, pause timing, navigation and DC transfer remain unverified. Preview disclosure and dependency requirements retained. No installed plugin binary replaced.
+
+
 ## 2026-10-20 — Market Voyager 1.0.0.0 public preview
 
 - Published at the user's explicit request. New independent Dalamud API 15 plugin by Roxyz0501, MIT; separate from Market Sweep.
