@@ -1,5 +1,18 @@
 # Market Voyager publication state
 
+## 2026-10-21 — Market Voyager 1.0.1.8 price-check history and market approach
+
+- Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.8
+- ZIP: https://github.com/Roxyz0501/MarketVoyager/releases/download/v1.0.1.8/MarketVoyager-1.0.1.8.zip
+- Source/tag: `7cbc5eb665447263449ba7a39372deee796a9e5f`.
+- ZIP: 517,587 bytes; SHA-256 `70FD457DB2988DEAF05491DFE63CDCEA6D0D03652893549A7D170D638CBF3921`; eight allowlisted files.
+- Per-list six-hour exclusion defaults on and is independently switchable. Successful price-list checks, including no purchase/no listings, update the cooldown; travel/opening/failed loads do not. Last confirmed purchase is separate. Histories persist in UTC with local-time display and a 512-world bound.
+- Current DC first, worlds grouped by DC. Start away from Limsa main aetheryte requests one Lifestream teleport and waits up to 120 seconds. In-tour aetheryte return remains walking. Paused edits apply to remaining worlds while the active same-list visit can continue.
+- Market approach temporarily enables vnavmesh camera alignment and restores it on cleanup. The ordinary near-board object handler uses no camera sight check, with targetability and 2m distance guards. No OS foreground/input injection or change to purchase UI routing.
+- Clean Release zero warnings/errors; 960 core assertions, 548 native checks, 1074 UI/glyph/lifecycle checks and 46 renders. History/save batching, DC order, teleport IPC, camera error cleanup, ordinary native interaction and seven-language UI verified. Canonical tabs and source/package scans passed.
+- Public repository/icon HTTP 200 (image/png); anonymous ZIP hash and metadata verified. Shared index `73742ba66ab0f7b30b076e3ea5835f75ae1ee814`, connector and both main/pinned raw verified 1.0.1.8; 12 other entries preserved.
+- Published under standing authorization using connector for source/index/records and CLI only for unsupported release/assets and local history sync. No game input or installed DLL replacement. Actual in-game travel, camera and inactive-window access remain unverified.
+
 ## 2026-10-21 — Market Voyager 1.0.1.7 editing while paused
 
 - Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.7
