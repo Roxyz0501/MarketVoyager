@@ -2,6 +2,8 @@
 
 ## Measured offline results
 
+- 1.0.1.6: default/legacy 100ms migration, 750ms JSON persistence, invalid-value bounds and production scheduler tests at 50/100/500/2000ms across all five purchase phases. Tests retain transaction timeouts. Whole-list deletion tests cover active-run rejection, selected-list removal, unchanged other-list counters, both pending ledgers, restart persistence and last-list replacement. Seven-language settings renders and Japanese inline-delete confirmation inspected.
+
 - 1.0.1.5: clean Release (zero warnings/errors), 943 core, 542 native and 929 UI/glyph/lifecycle checks; 39 background renders. Production scheduler tests exercise Search/Select/Listings/Confirm/Result transitions at 100ms while preserving their 20-second timeout in the fixture. A matching early purchase notification keeps the reservation and Result state, performs no config save, and wakes inventory reconciliation. Existing exact-delta and double-count protections remain covered. Actual game throughput and approach geometry have not been measured.
 - Approach change: stop at 2m (previously 3m), wait one second for movement to settle, then at most three ordinary interactions at two-second intervals under the same 30-second Open timeout. These are code-level bounds, not measured game timings.
 
@@ -31,7 +33,7 @@ These are design bounds unless specifically marked measured above; they are not 
 - No plugin HTTP client, remote database or price-service polling. No plugin-owned external HTTP reads/writes while displaying or editing lists.
 - Item catalogue: one host sheet acquisition at plugin initialization; item-name lookup during rendering uses an in-memory dictionary. Search scans that bounded local catalogue only when a filter or sort changes, with 30 rows rendered per page; filters include category/minimum NPC price and stable sort.
 - List limits: 50 lists × 1,000 rows; one active list. World sheet traversed once per run. Per-world visible listings bounded to the game's 100-entry buffer.
-- Framework controller: at most ten local checks/second in purchase phases, four while moving/selling; stopped pending-purchase reconciliation remains once per second. Idle controller returns immediately. Travel IPC checks do not themselves query a remote database.
+- Framework controller: at most twenty local checks/second in purchase phases (50ms minimum, ten by default), four while moving/selling; stopped pending-purchase reconciliation remains once per second. Idle controller returns immediately. Travel IPC checks do not themselves query a remote database.
 - A world/item search is triggered once per stage; an accepted request advances the state. Listing-fetch timeout permits three reopening attempts per item. A purchase result timeout permits two additional searches of the same listing, separated by 20-second result deadlines and a 3-second retry delay.
 - Configuration numeric/name edits debounce at 600 ms. Purchase reservations and completed quantity updates save immediately, since these are necessary for restart consistency. Unchanged views do not save.
 - Config and catalogue are local. Inventory baselines contain the character content ID locally; no account/config data is uploaded by the plugin.
@@ -51,3 +53,7 @@ Automatic-sale design bounds: four loaded ordinary bags / 140 slots per local in
 1.0.1.3 communication budget: while stopped with an unresolved purchase, check local inventory at most once per second, only for the recorded character; clear the reservation once resolved. With no pending purchase, the stopped controller returns without a native inventory read. No external API, packet sender or price polling was added. A search-input notification is sent once per text/widget/search cycle, not on every tick. Submission state is saved before the registered OK event dispatch.
 
 1.0.1.5 performance limits: no additional HTTP/database operations. Ready-stage scheduling is 100ms instead of 1,000ms; post-purchase progress waits on inventory rather than a fixed 2,000ms delay. Ten local observations per second do not mean ten requests: a submitted purchase stays in Result until the exact inventory delta, or the existing 20-second bounded retry policy. Result polling skips item-sheet/list scans. No repeat configuration writes occur merely while awaiting inventory. Timing bounds are design targets; no live transactions/second claim is made.
+
+1.0.1.6 budgets: configurable 50–2000ms delay bounds purchase observation at 0.5–20Hz, default 10Hz; a purchase receipt may additionally wake a local inventory check. No extra external reads/writes. Delay edits share the existing 600ms save debounce and do not save on unchanged frames. Whole-list deletion saves once and preserves at most the two existing unresolved ledgers. These are design bounds, not measured game-network traffic or purchase throughput.
+
+1.0.1.6 validation: clean Release, zero warnings/errors; 943 core assertions, 542 native checks, 1005 UI/glyph/lifecycle checks and 39 background renders. Japanese settings and deletion-confirmation images inspected.

@@ -60,14 +60,23 @@ unsafe class Program
    runnerType.GetMethod("Stop")!.Invoke(runner,[Enum.Parse(state.PropertyType,"Stopped")]);
    var setPhase=runnerType.GetMethod("Set",BindingFlags.Instance|BindingFlags.NonPublic)!;
    var nextField=runnerType.GetField("next",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   Check(new Configuration().PurchaseDelayMs==100,"new configurations retain 100ms default");
+   Check(System.Text.Json.JsonSerializer.Deserialize<Configuration>("{}")!.PurchaseDelayMs==100,"old configs migrate to 100ms without a setting");
+   var delayConfig=new Configuration {PurchaseDelayMs=750};
+   Check(System.Text.Json.JsonSerializer.Deserialize<Configuration>(System.Text.Json.JsonSerializer.Serialize(delayConfig))!.PurchaseDelayMs==750,"custom purchase delay survives restart");
+   delayConfig.PurchaseDelayMs=int.MinValue; Check(delayConfig.PurchaseDelayMs==50,"invalid low delay is bounded");
+   delayConfig.PurchaseDelayMs=int.MaxValue; Check(delayConfig.PurchaseDelayMs==2000,"invalid high delay is bounded");
+   foreach(int configured in new[]{50,100,500,2000})
    foreach(var phase in new[]{"Search","Select","Listings","Confirm","Result"}) {
+    Dummy.Config.PurchaseDelayMs=configured;
     var began=DateTime.UtcNow;
     setPhase.Invoke(runner,[Enum.Parse(state.PropertyType,phase),20]);
     var scheduled=(DateTime)nextField.GetValue(runner)!;
-    Check(scheduled>=began.AddMilliseconds(100) && scheduled<=DateTime.UtcNow.AddMilliseconds(110),"ready purchase phases use a short scheduled delay");
+    Check(scheduled>=began.AddMilliseconds(configured) && scheduled<=DateTime.UtcNow.AddMilliseconds(configured+10),"purchase phases use the current configured delay");
     var limit=(DateTime)runnerType.GetField("deadline",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(runner)!;
     Check(limit>=began.AddSeconds(20),"faster checks preserve transaction timeout");
    }
+   Dummy.Config.PurchaseDelayMs=100;
    var receiptRule=new BuyRule {ItemId=42,QuantityLimit=10,Purchased=2};
    var reservation=new Reservation {RuleId=receiptRule.Id,ItemId=42,Quantity=5,InventoryBefore=10,Submitted=true};
    Dummy.Config.Pending=reservation;
@@ -131,6 +140,9 @@ unsafe class Program
    int countBefore=Dummy.Config.Lists[0].Items.Count;
    remove.Invoke(plugin,[Dummy.Config.Lists[0],new HashSet<Guid>{Dummy.Config.Lists[0].Items[0].Id}]);
    Check(Dummy.Config.Lists[0].Items.Count==countBefore,"running list cannot be deleted");
+   var deleteList=type.GetMethod("DeleteList",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   deleteList.Invoke(plugin,[Dummy.Config.Lists[0]]);
+   Check(Dummy.Config.Lists.Count==1 && Dummy.Config.Lists[0].Items.Count==countBefore,"whole-list deletion is also blocked while running");
    runnerType.GetMethod("Stop")!.Invoke(runner,[Enum.Parse(state.PropertyType,"Stopped")]);
    Dummy.Config.Language="ja";
    var anchorField=type.GetField("listOptionsAnchor",BindingFlags.Instance|BindingFlags.NonPublic)!;
@@ -140,6 +152,7 @@ unsafe class Program
    for(int i=0;i<60;i++) {
     ImGui.NewFrame(); ImGui.SetNextWindowPos(new(20,20)); ImGui.Begin("Popup stability QA");
     if(i==0) ImGui.OpenPopup("ListOptionsPopup");
+    if(i==30) type.GetField("confirmListDelete",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(plugin,true);
     using(var font=Dummy.Push()) type.GetMethod("DrawListOptionsPopup",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,[Dummy.Config.Lists[0]]);
     var pos=(System.Numerics.Vector2)positionField.GetValue(plugin)!;
     if(i==3) stable=pos;
@@ -148,6 +161,21 @@ unsafe class Program
    }
    Check(stable is { X: > 0, Y: > 0 },"popup was actually laid out");
    Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,"ja-list-options-stable.bmp"));
+   var doomed=Dummy.Config.Lists[0]; var keep=new ShoppingList{Name="Keep",Items=[new(){ItemId=4,Purchased=7}]};
+   var buy=doomed.Items[0]; var sell=doomed.Items[1];
+   Dummy.Config.Pending=new(){RuleId=buy.Id,ItemId=buy.ItemId};
+   Dummy.Config.PendingSale=new(){RuleId=sell.Id};
+   Dummy.Config.Lists.Add(keep); Dummy.Config.Selected=0;
+   var keepJson=System.Text.Json.JsonSerializer.Serialize(keep);
+   deleteList.Invoke(plugin,[doomed]);
+   Check(Dummy.Config.Lists.Count==1 && ReferenceEquals(Dummy.Config.Lists[0],keep) && Dummy.Config.Selected==0,"deleting selected list selects the remaining list");
+   Check(keepJson==System.Text.Json.JsonSerializer.Serialize(keep),"deleting a list preserves other list settings and counters");
+   Check(Dummy.Config.DetachedRules.Count==2 && Dummy.Config.FindRule(buy.Id)==buy && Dummy.Config.FindRule(sell.Id)==sell,"whole-list deletion retains both unresolved ledgers");
+   var savedDeletion=System.Text.Json.JsonSerializer.Deserialize<Configuration>(System.Text.Json.JsonSerializer.Serialize(Dummy.Config))!;
+   Check(savedDeletion.Lists.Count==1 && savedDeletion.FindRule(buy.Id)!=null && savedDeletion.FindRule(sell.Id)!=null,"whole-list deletion and pending ledgers survive restart");
+   deleteList.Invoke(plugin,[keep]);
+   Check(Dummy.Config.Lists.Count==1 && Dummy.Config.Lists[0].Items.Count==0 && Dummy.Config.Selected==0,"deleting the last list creates an empty selectable list");
+   Dummy.Config.Pending=null; Dummy.Config.PendingSale=null; Dummy.Config.PruneDetached();
    var travel=type.GetField("travel",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin)!;
    var change=travel.GetType().GetMethod("ChangeWorld")!;
    bool refused=false;

@@ -95,7 +95,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     private void Set(Phase phase, int seconds = 30)
     {
         State = phase; deadline = DateTime.UtcNow.AddSeconds(seconds);
-        next = DateTime.UtcNow.AddMilliseconds(phase is >= Phase.Search and <= Phase.Result ? 100 : 1000);
+        next = DateTime.UtcNow.AddMilliseconds(phase is >= Phase.Search and <= Phase.Result ? config.PurchaseDelayMs : 1000);
     }
     private void NextWorld()
     {
@@ -140,7 +140,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
             return;
         }
         // Faster local observation while buying; UI readiness still gates every action.
-        next = DateTime.UtcNow.AddMilliseconds(State is >= Phase.Search and <= Phase.Result ? 100 : 250);
+        next = DateTime.UtcNow.AddMilliseconds(State is >= Phase.Search and <= Phase.Result ? config.PurchaseDelayMs : 250);
         try
         {
             if (pause.Enter(State is Phase.Search or Phase.Select or Phase.Listings or Phase.SellPick,
@@ -298,7 +298,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                         config.Pending.Submitted = true; save();
                     });
                     if (action == 2) { if (State == Phase.Result) Set(Phase.Result, 20); }
-                    else { State = Phase.Confirm; next = DateTime.UtcNow.AddMilliseconds(action == 1 ? 250 : 100); }
+                    else { State = Phase.Confirm; next = DateTime.UtcNow.AddMilliseconds(action == 1 ? Math.Max(250, config.PurchaseDelayMs) : config.PurchaseDelayMs); }
                     break;
             }
         }

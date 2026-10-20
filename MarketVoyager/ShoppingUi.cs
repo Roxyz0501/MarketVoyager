@@ -20,6 +20,7 @@ public sealed partial class Plugin
     private const int PageSize = 30;
     private Vector2 listOptionsAnchor;
     private Vector2 listOptionsPosition;
+    private bool confirmListDelete;
     private void RefreshCatalogue()
     {
         filtered = Catalog.Filter(catalogue, query, category, minimumNpc, (CatalogSort)sort);
@@ -35,6 +36,19 @@ public sealed partial class Plugin
         if (EditingLocked) return;
         if (config.RemoveRules(list, ids) > 0) Save();
         selectedRules.ExceptWith(ids);
+    }
+    private void DeleteList(ShoppingList list)
+    {
+        if (EditingLocked) return;
+        int index = config.Lists.IndexOf(list);
+        if (index < 0) return;
+        config.RemoveRules(list, list.Items.Select(x => x.Id).ToHashSet());
+        config.Lists.RemoveAt(index);
+        if (config.Lists.Count == 0) config.Lists.Add(new() { Name = $"{T("Lists")} 1" });
+        config.Selected = Math.Clamp(config.Selected > index ? config.Selected - 1 : config.Selected, 0, config.Lists.Count - 1);
+        selectedRules.Clear(); rulePage = 0; batchMessage = null;
+        confirmListDelete = openBatch = openNpcBatch = false;
+        saveAt = null; Save();
     }
     private void DrawTransport()
     {
@@ -71,12 +85,14 @@ public sealed partial class Plugin
         { config.Lists.Add(new() { Name = $"{T("Lists")} {config.Lists.Count + 1}" }); config.Selected = config.Lists.Count - 1; selectedRules.Clear(); rulePage = 0; Save(); }
         ImGui.SameLine(); if (ImGui.Button(T("ListOptions") + "###ListOptions"))
         {
+            confirmListDelete = false;
             listOptionsAnchor = new(ImGui.GetItemRectMin().X, ImGui.GetItemRectMax().Y + ImGui.GetStyle().ItemSpacing.Y);
             ImGui.OpenPopup("ListOptionsPopup");
         }
         var list = config.Lists[config.Selected];
         ImGui.SameLine(); ImGui.TextDisabled($"{list.Items.Count} / {Catalog.ListCapacity}");
         DrawListOptionsPopup(list);
+        list = config.Lists[config.Selected];
         if (batchMessage is { } message)
             ImGui.TextWrapped(message.Error != null ? T(message.Error) : $"{T("Changed")}: {message.Changed} / {T("Skipped")}: {message.Skipped}");
         if (ImGui.BeginTabBar("ListViews"))
@@ -115,6 +131,18 @@ public sealed partial class Plugin
             ImGui.TextWrapped(T("FreeSlots")); ImGui.SetNextItemWidth(120);
             if (ImGui.InputInt("###FreeSlots", ref threshold)) { list.FreeSlotsThreshold = Math.Clamp(threshold, 0, 139); ScheduleSave(); }
             ImGui.TextWrapped(T("SaleHelp"));
+        }
+        ImGui.Separator();
+        if (!confirmListDelete)
+        {
+            if (ImGui.Button(T("DeleteList") + "###DeleteList")) confirmListDelete = true;
+        }
+        else
+        {
+            ImGui.TextWrapped(T("DeleteListHelp"));
+            if (ImGui.Button(T("DeleteList") + "###ConfirmDeleteList")) { DeleteList(list); ImGui.CloseCurrentPopup(); }
+            ImGui.SameLine();
+            if (ImGui.Button(T("Cancel") + "###CancelDeleteList")) confirmListDelete = false;
         }
     }
     // Labels above controls keep translated text out of neighbouring columns.

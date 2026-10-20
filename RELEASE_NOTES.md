@@ -1,10 +1,10 @@
-Market Voyager 1.0.1.5 — closer market access and faster purchasing
+Market Voyager 1.0.1.6 — configurable purchase delay and list deletion
 
-- Walk to within 2m of the market board instead of stopping at 3m. Allow movement to settle for one second, then use ordinary interaction. Retry up to three interactions, at least two seconds apart, while waiting for the market window; retain the original 30-second timeout.
-- Reduce purchase-stage transitions from a fixed second to 100ms, and observe local readiness every 100ms while buying. Checkbox changes wait 250ms. Movement and sale pacing are unchanged.
-- Remove the fixed two-second delay after purchases. A purchase notification wakes inventory reconciliation; it never credits or advances on its own. Only the exact inventory increase clears the pending transaction, and the next listing waits for the confirmation window to close.
-- Preserve price/quantity/quality limits, normal UI event paths, persisted reservations and existing bounded failure retries.
+- Settings now provides a persisted purchase delay from 50 to 2000ms, defaulting to 100ms for both new and existing configurations. Reset to 100ms is available; changes apply to subsequent scheduling during a run.
+- Apply the setting to search, listing selection, confirmation and result checks. Checkbox settling retains a minimum 250ms; movement, error backoffs, outcome timeouts and inventory reconciliation requirements remain unchanged.
+- List settings can delete an entire shopping list after an inline confirmation. Deleting the last list creates an empty one. Unresolved purchase/sale ledgers remain available until reconciliation; other lists and their counters are preserved. Deletion is unavailable while running.
+- All controls and help are localized in seven languages. No added external requests.
 
-Actual in-game position and throughput remain unverified; public preview. No game input or installed DLL replacement performed.
+Actual in-game timing remains unverified; public preview.
 
-Validation: clean Release, zero warnings/errors; 943 core assertions, 542 native checks and 929 UI/glyph/lifecycle checks, 39 background renders.
+1.0.1.6 validation: clean Release, zero warnings/errors; 943 core assertions, 542 native checks, 1005 UI/glyph/lifecycle checks and 39 background renders. Japanese settings and deletion-confirmation images inspected.

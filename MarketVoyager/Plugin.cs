@@ -127,6 +127,16 @@ public sealed partial class Plugin : IDalamudPlugin
     }
     private void DrawSettings()
     {
+        ImGui.TextUnformatted(T("PurchaseDelay"));
+        int delay = config.PurchaseDelayMs;
+        ImGui.SetNextItemWidth(180);
+        if (ImGui.InputInt("###PurchaseDelayMs", ref delay, 50, 100) && Math.Clamp(delay, 50, 2000) != config.PurchaseDelayMs)
+        { config.PurchaseDelayMs = delay; ScheduleSave(); }
+        ImGui.SameLine();
+        if (ImGui.Button(T("DefaultDelay") + "###DefaultPurchaseDelay") && config.PurchaseDelayMs != 100)
+        { config.PurchaseDelayMs = 100; ScheduleSave(); }
+        ImGui.TextWrapped(T("PurchaseDelayHelp"));
+        ImGui.Separator();
         foreach (var dependency in new[] { "Lifestream", "vnavmesh" })
             ImGui.TextUnformatted($"{dependency}: {T(travel.Loaded(dependency) ? "Loaded" : "Missing")}");
         ImGui.TextWrapped(T("Help")); ImGui.TextWrapped(T("RetryHelp"));

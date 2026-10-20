@@ -4,6 +4,12 @@ public sealed class Configuration : IPluginConfiguration
 {
     public int Version { get; set; } = 1;
     public string? Language { get; set; }
+    private int purchaseDelayMs = 100;
+    public int PurchaseDelayMs
+    {
+        get => purchaseDelayMs;
+        set => purchaseDelayMs = Math.Clamp(value, 50, 2000);
+    }
     public List<ShoppingList> Lists { get; set; } = [new()];
     public int Selected { get; set; }
     public Reservation? Pending { get; set; }
