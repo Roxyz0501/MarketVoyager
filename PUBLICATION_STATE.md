@@ -1,5 +1,17 @@
 # Market Voyager publication state
 
+## 2026-10-20 — Market Voyager 1.0.1.1 registered-list bulk editing
+
+- Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.1
+- ZIP: https://github.com/Roxyz0501/MarketVoyager/releases/download/v1.0.1.1/MarketVoyager-1.0.1.1.zip
+- Source/tag: `13ceec38afa148c1f724abdcc64a85af3edbb8ac`.
+- ZIP: 499,075 bytes; SHA-256 `DA60D4EB357BE9DD117608DAE5FA801BD72250880514D9D9D45A0E6EB3447205`; eight allowlisted files.
+- Visible Batch edit button above registered items; explicit selected/all-registered scope, including off-page/search-excluded rows. Fields start unchecked and only opted-in fields change. Dedicated NPC pricing also supports both scopes. Purchased and unsold counts preserved.
+- Release zero warnings/errors; 931 core assertions, 810 offline UI/glyph/lifecycle/scope checks, 31 renders. Direct editor tested against 45 registered rows; opening it changes no saved values. Canonical shared tabs and source/binary scans passed.
+- Public repo/icon HTTP 200, image/png; anonymous ZIP hash matched. Shared index commit `7c6a60057d0df844444ab8c3c37270dabae1c080`: connector/pinned URL verified 1.0.1.1 and all 12 other entries preserved. Normal main URL initially returned cached 1.0.1.0 (HTTP 200).
+- Published under the user's standing instruction, connector used for source/index/records and CLI only for unsupported Release/asset operations. Actual game behavior remains unverified. No installed plugin DLL replaced.
+
+
 ## 2026-10-20 — Market Voyager 1.0.1.0 public preview
 
 - Published under the user's standing publication instruction. Repository: https://github.com/Roxyz0501/MarketVoyager
