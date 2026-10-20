@@ -1,5 +1,17 @@
 # Market Voyager publication state
 
+## 2026-10-21 — Market Voyager 1.0.1.7 editing while paused
+
+- Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.7
+- ZIP: https://github.com/Roxyz0501/MarketVoyager/releases/download/v1.0.1.7/MarketVoyager-1.0.1.7.zip
+- Source/tag: `31a9d22e36d457494d5a29c2e66783790f1507ba`.
+- ZIP: 511,727 bytes; SHA-256 `F5F6C3F93CFBAF547245A2389EDD95A79CEECB1A8FC2B5F07270D181FEEE2E6C`; eight allowlisted files.
+- Lists unlock only when fully paused. Resume validates/reloads the selected list, rebuilds additions/deletions/limits/quality, preserves purchased counts and restarts item search from the beginning with fresh listings. Start remains disabled during a paused tour.
+- Remaining world itinerary is retained. Aetheryte pause continues toward the queued next world; vendor pause uses updated auto-sell settings/list. Active-list deletion follows the replacement selection. Empty/completed lists end; invalid overlaps stop before further purchase. No return to previously visited worlds.
+- Clean Release zero warnings/errors; 943 core assertions, 542 native checks, 1022 UI/glyph/lifecycle checks and 39 renders. Production pause/edit/resume regressions and Japanese paused UI verified. Canonical tabs and source/package scans passed.
+- Public repository/icon HTTP 200 (image/png), anonymous ZIP hash and metadata verified. Shared index `16e6a309655541f234ca9ee85e2046e13137b455`, connector and pinned raw verified 1.0.1.7; 12 other entries preserved. Main raw initially cached 1.0.1.6.
+- Published under standing authorization using connector for source/index/records and CLI only for unsupported release/assets and local history sync. No game input or installed DLL replacement. Actual in-game resume behavior remains unverified.
+
 ## 2026-10-21 — Market Voyager 1.0.1.6 configurable wait and list deletion
 
 - Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.6
