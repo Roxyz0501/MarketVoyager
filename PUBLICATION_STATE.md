@@ -1,5 +1,19 @@
 # Market Voyager publication state
 
+## 2026-10-20 — Market Voyager 1.0.1.3 search/confirmation and stopped editing
+
+- Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.3
+- ZIP: https://github.com/Roxyz0501/MarketVoyager/releases/download/v1.0.1.3/MarketVoyager-1.0.1.3.zip
+- Source/tag: `8d31c2778e61e258ce8fd102eeb333871ce3bc8d`.
+- ZIP: 504,015 bytes; SHA-256 `21B3E5344B5D05791B61C8B9F4EFC488F7BD0E7BB69378BD81272A326888459D`; eight allowlisted files.
+- Search sends the registered TextChanged callback with the normal widget buffers/owner. Pre-OK validation compares the selected listing, not the last-purchase record populated after acceptance. Submission state is persisted before the ordinary OK event; disabled buttons remain disabled.
+- Stopping unlocks settings and bulk editing; only deletion/reset of the unresolved row is protected. Owned unsent dialogs are canceled when possible. Stopped inventory reconciliation credits successful purchases; confirmed cancellations and an explicit legacy not-purchased recovery path do not inflate purchased counts. Conservative manual counts do not create resale stock.
+- Clean Release zero warnings/errors; 943 core assertions, 534 native ABI/search/selection checks, 847 UI/glyph/lifecycle checks and 38 renders. Inspected Japanese stopped-pending screen. Canonical tabs, source and UTF-8/UTF-16 binary scans passed.
+- Read-only installed-client analysis confirmed the late last-purchase update. No game code/disassembly/data redistributed. No game input or installed DLL replacement performed; live-game confirmation remains outstanding.
+- Public repo/icon HTTP 200 (image/png); anonymous ZIP hash matched. Shared index commit `16e35611c4e35740ba6e0f5ac371d7b2541b749a` and connector verified 1.0.1.3; 12 other entries preserved. Main raw URL initially cached 1.0.1.2; pinned URL served 1.0.1.3.
+- Published under standing authorization. Connector used for source/index/records; CLI only for unsupported Release/assets and local history synchronization.
+
+
 ## 2026-10-20 — Market Voyager 1.0.1.2 search startup fix
 
 - Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.2
