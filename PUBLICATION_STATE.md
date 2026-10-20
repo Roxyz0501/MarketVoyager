@@ -1,5 +1,17 @@
 # Market Voyager publication state
 
+## 2026-10-20 — Market Voyager 1.0.1.4 listing eligibility and walking return
+
+- Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.4
+- ZIP: https://github.com/Roxyz0501/MarketVoyager/releases/download/v1.0.1.4/MarketVoyager-1.0.1.4.zip
+- Source/tag: `9a8b0d93f584d78fe1f00f051122ed4641e16938`.
+- ZIP: 507,094 bytes; SHA-256 `00472813E52F1C80C8FBA9C9BD6F96D30C400407DEBA24DEC56FBD79BFE37C08`; eight allowlisted files.
+- Search focuses the ordinary input collision node before typing. Already-open matching results advance to eligibility. Pre-dispatch failures no longer exclude the listing or renew the deadline, and perform no reservation disk writes. Last offer/candidate counts are visible.
+- Stopped single/bulk deletion retains only unresolved transaction ledgers until reconciliation. List settings keep a fixed anchor. World changes require walking back to Limsa main aetheryte and Lifestream recognition of aetheryte 8; return-to-gateway is false.
+- Clean Release zero warnings/errors; 943 core assertions, 542 native checks, 917 UI/glyph/lifecycle checks, 39 renders. Sixty popup frames remained stationary; Japanese image inspected. Canonical tabs and source/UTF-8/UTF-16 package scans passed.
+- Public repository/icon HTTP 200 (image/png); anonymous release download matched hash and manifest. Shared index `c9cebfabd3031bbe7761091b828d750e3a8d0d6b`, connector, main raw URL and pinned raw URL verified 1.0.1.4; 12 unrelated entries preserved.
+- Published under standing authorization. Connector used for source/index/records; CLI only for unsupported release/assets and local Git synchronization. No installed DLL replacement or game input. Actual in-game purchase/search/walking behavior remains unverified.
+
 ## 2026-10-20 — Market Voyager 1.0.1.3 search/confirmation and stopped editing
 
 - Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.3
