@@ -123,6 +123,28 @@ public sealed partial class Plugin
         string name = list.Name;
         ImGui.TextWrapped(T("Name")); ImGui.SetNextItemWidth(-1);
         if (ImGui.InputText("###Name", ref name, 100)) { list.Name = name; ScheduleSave(); }
+        ImGui.Separator();
+        bool skipRecent = list.SkipRecentWorlds;
+        if (ImGui.Checkbox(T("SkipRecentWorlds") + "###SkipRecentWorlds", ref skipRecent))
+        { list.SkipRecentWorlds = skipRecent; Save(); }
+        ImGui.TextWrapped(T("WorldHistoryHelp"));
+        if (ImGui.CollapsingHeader(T("WorldHistory") + "###WorldHistory"))
+        {
+            if (ImGui.BeginTable("WorldHistoryRows", 3, ImGuiTableFlags.Borders | ImGuiTableFlags.ScrollY,
+                new Vector2(0, 160)))
+            {
+                ImGui.TableSetupColumn(T("World")); ImGui.TableSetupColumn(T("LastChecked")); ImGui.TableSetupColumn(T("LastPurchased"));
+                ImGui.TableSetupScrollFreeze(0, 1); ImGui.TableHeadersRow();
+                foreach (var row in list.WorldHistory.OrderByDescending(x => x.Value.LastCheckedUtc))
+                {
+                    ImGui.TableNextRow(); ImGui.TableNextColumn();
+                    ImGui.TextUnformatted(worldNames.GetValueOrDefault(row.Key, row.Key.ToString()));
+                    ImGui.TableNextColumn(); ImGui.TextUnformatted(HistoryTime(row.Value.LastCheckedUtc));
+                    ImGui.TableNextColumn(); ImGui.TextUnformatted(HistoryTime(row.Value.LastPurchasedUtc));
+                }
+                ImGui.EndTable();
+            }
+        }
         ImGui.Separator(); bool sell = list.AutoSell;
         if (ImGui.Checkbox(T("AutoSell") + "###AutoSell", ref sell)) { list.AutoSell = sell; Save(); }
         if (sell)
@@ -145,6 +167,8 @@ public sealed partial class Plugin
             if (ImGui.Button(T("Cancel") + "###CancelDeleteList")) confirmListDelete = false;
         }
     }
+    private static string HistoryTime(DateTimeOffset? time) =>
+        time is { } value && value != default ? value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "-";
     // Labels above controls keep translated text out of neighbouring columns.
     private void Field(string key) { ImGui.TableNextColumn(); ImGui.TextWrapped(T(key)); ImGui.SetNextItemWidth(-1); }
     private void DrawBatchSettings(bool editing = false)

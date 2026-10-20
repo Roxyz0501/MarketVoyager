@@ -1,9 +1,9 @@
-Market Voyager 1.0.1.7 — edit shopping lists while paused
+Market Voyager 1.0.1.8 — price-check history and market approach
 
-- Unlock list editing only after the controller is fully paused. Waiting for an active transaction or movement to finish keeps editing locked; Start remains disabled during a paused tour.
-- Resume validates and reloads the currently selected list, including additions, deletions, price/tax/quality/quantity changes and list switching. Preserve purchased counts, skip newly completed rules and search the current tour world's list from the beginning using fresh listings.
-- Keep the remaining world itinerary. A pause at the aetheryte continues to the already queued next world. A paused vendor visit uses the edited list when auto-sell remains enabled, or returns to the market if disabled. Previously visited worlds are not revisited.
-- Deleting the active list uses the replacement selection on resume. An empty or fully purchased list ends the tour; invalid overlapping rules stop before another purchase.
-- Validate again on resume without introducing external API requests. Existing purchase caps, inventory reconciliation and normal UI routes remain.
+- リスト設定に「6時間以内に価格確認したワールドを除外」を追加。リストごとにオン・オフ可能（初期オン）。正常な価格取得で更新し、購入なし・出品なしも対象。移動だけ・画面を開くだけ・取得失敗は対象外。
+- ワールドごとの最終価格確認と、所持品で確認できた最終購入を別々に記録。6時間経過後は再訪可能。履歴は除外オフでも保持。
+- 現在のDCから、DCごとにまとめて巡回。開始位置がリムサのメインエーテライト付近でなければLifestreamでテレポして開始。巡回中のエーテライトへの帰路は徒歩を維持。
+- マーケットへの移動中はvnavmeshでカメラを進行方向に合わせ、終了時に元の追従設定へ復元。2m以内のボードへのアクセスを、カメラの視線チェックに依存しない通常オブジェクト操作へ変更。OSの前面化・入力送信は使用しません。
+- 価格確認の保存は初回を即時保存し、その後は取引保存・移動前・停止時、または30秒ごとにまとめます。購入のUI経路・価格上限・所持数照合は維持。
 
-Validation: clean Release with zero warnings/errors; 943 core assertions, 542 native checks, 1022 UI/glyph/lifecycle checks and 39 background renders. Production pause/edit/resume tests and Japanese paused UI inspected. Actual in-game continuation remains unverified; public preview.
+Validation: clean Release with zero warnings/errors; 960 core assertions, 548 native checks, 1074 UI/glyph/lifecycle checks and 46 background renders. Seven-language history UI, camera restoration/error paths, teleport IPC, bounded/coalesced history and ordinary interaction dispatch verified offline. Actual in-game navigation, teleport, camera and background-window behavior remain unverified; public preview.

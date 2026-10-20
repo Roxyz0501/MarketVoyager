@@ -16,10 +16,19 @@ public sealed class BuyRule
 
 public sealed class ShoppingList
 {
+    public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "List 1";
     public List<BuyRule> Items { get; set; } = [];
     public bool AutoSell { get; set; }
     public int FreeSlotsThreshold { get; set; } = 5;
+    public bool SkipRecentWorlds { get; set; } = true;
+    public Dictionary<uint, WorldVisit> WorldHistory { get; set; } = [];
+}
+
+public sealed class WorldVisit
+{
+    public DateTimeOffset LastCheckedUtc { get; set; }
+    public DateTimeOffset? LastPurchasedUtc { get; set; }
 }
 
 public readonly record struct Offer(ulong Id, uint Item, uint Price, uint Quantity, uint Tax, bool Hq)
@@ -29,6 +38,7 @@ public readonly record struct Offer(ulong Id, uint Item, uint Price, uint Quanti
 
 public sealed class Reservation
 {
+    public Guid ListId { get; set; }
     public Guid RuleId { get; set; }
     public ulong ListingId { get; set; }
     public uint ItemId { get; set; }

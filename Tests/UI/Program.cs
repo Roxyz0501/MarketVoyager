@@ -184,6 +184,38 @@ unsafe class Program
    Dummy.ActiveAetheryte=8; change.Invoke(travel,["TestWorld"]);
    Check(Dummy.TravelRequests==1 && Dummy.TravelArgs is {Length:7} && Equals(Dummy.TravelArgs[1],false) && Equals(Dummy.TravelArgs[6],false),
        "arrival permits only aetheryte world route, with no return teleport");
+   var travelType=travel.GetType();
+   var teleport=travelType.GetMethod("TeleportToLimsa")!;
+   Check((bool)teleport.Invoke(travel,null)! && Dummy.TeleportArgs is {Length:2} && Equals(Dummy.TeleportArgs[0],(uint)8) &&
+       Equals(Dummy.TeleportArgs[1],(byte)0),"startup teleport uses public Lifestream destination 8, sub-index 0");
+   Dummy.TravelBusy=true;
+   Check(!(bool)teleport.Invoke(travel,null)! && Dummy.TeleportRequests==1,"busy dependency prevents startup teleport");
+   Dummy.TravelBusy=false; Dummy.TeleportAccepted=false;
+   Check(!(bool)teleport.Invoke(travel,null)!,"teleport rejection is propagated");
+   Dummy.TeleportAccepted=true;
+   var move=travelType.GetMethod("Move")!; var pollMove=travelType.GetMethod("PollMove")!; var stopMove=travelType.GetMethod("StopMove")!;
+   bool MoveCamera()=> (bool)move.Invoke(travel,[new System.Numerics.Vector3(),new System.Numerics.Vector3(1,0,0),true])!;
+   Check(MoveCamera() && Dummy.AlignCamera && Dummy.CameraWrites==1,"owned market movement enables camera alignment once");
+   Check(!MoveCamera() && Dummy.CameraWrites==1,"pending owned path is not overwritten");
+   Check((bool)pollMove.Invoke(travel,null)! && Dummy.MoveRequests==1,"completed path is handed to navigation provider");
+   stopMove.Invoke(travel,null);
+   Check(!Dummy.AlignCamera && Dummy.CameraWrites==2,"stopping owned movement restores prior camera configuration");
+   Dummy.AlignCamera=true;
+   Check(MoveCamera(),"already aligned movement accepted"); pollMove.Invoke(travel,null); stopMove.Invoke(travel,null);
+   Check(Dummy.AlignCamera && Dummy.CameraWrites==2,"user's enabled camera option is left enabled without writes");
+   Dummy.AlignCamera=false; Dummy.NavBusy=true;
+   Check(!MoveCamera() && Dummy.CameraWrites==2 && !Dummy.AlignCamera,"another plugin's active movement is not changed");
+   Dummy.NavBusy=false;
+   foreach(int failure in new[]{1,2,3}) {
+    Dummy.PathFailure=failure; bool pathFailed=false;
+    try { MoveCamera(); pollMove.Invoke(travel,null); } catch(TargetInvocationException ex) when(ex.InnerException is InvalidOperationException) { pathFailed=true; }
+    Check(pathFailed && !Dummy.AlignCamera,"path error restores camera setting "+failure);
+   }
+   Dummy.PathFailure=0; MoveCamera(); pollMove.Invoke(travel,null); Dummy.StopFailure=true;
+   bool stopFailed=false;
+   try { stopMove.Invoke(travel,null); } catch(TargetInvocationException ex) when(ex.InnerException is InvalidOperationException) { stopFailed=true; }
+   Check(stopFailed && !Dummy.AlignCamera,"camera restored even if movement stop IPC throws");
+   Dummy.StopFailure=false;
    var resumeRows=game.GetExcelSheet<Lumina.Excel.Sheets.Item>()!.Where(x=>x.ItemSearchCategory.RowId!=0 && x.CanBeHq).Take(4).ToArray();
    var edited=new BuyRule {ItemId=resumeRows[0].RowId,UnitLimit=1000,QuantityLimit=20,Purchased=3};
    var removed=new BuyRule {ItemId=resumeRows[1].RowId,QuantityLimit=10};
@@ -226,10 +258,43 @@ unsafe class Program
    Dummy.Config.Lists[0].Items.Add(new(){ItemId=resumeRows[0].RowId,QuantityLimit=10});
    runnerType.GetMethod("TogglePause")!.Invoke(runner,null);
    Check(state.GetValue(runner)!.ToString()=="Error","resume rejects overlapping edited rules before any purchase");
+   Dummy.Config.Lists=[new(){Name="履歴テスト",SkipRecentWorlds=false}]; Dummy.Config.Selected=0;
+   var history=Dummy.Config.Lists[0]; var time=DateTimeOffset.UtcNow.AddMinutes(-5);
+   var realWorld=game.GetExcelSheet<Lumina.Excel.Sheets.World>()!.First(x=>x.IsPublic);
+   runnerType.GetField("activeList",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(runner,history);
+   runnerType.GetField("world",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(runner,(realWorld.RowId,realWorld.Name.ToString()));
+   var recordCheck=runnerType.GetMethod("RecordPriceCheck",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   int historySaves=Dummy.Saves;
+   recordCheck.Invoke(runner,null);
+   Check(Dummy.Saves==historySaves+1 && history.WorldHistory.ContainsKey(realWorld.RowId),"first successful price check saves immediately");
+   for(int i=0;i<20;i++) recordCheck.Invoke(runner,null);
+   Check(Dummy.Saves==historySaves+1,"subsequent price checks coalesce without per-item disk writes");
+   runnerType.GetMethod("Stop")!.Invoke(runner,[Enum.Parse(state.PropertyType,"Stopped")]);
+   Check(Dummy.Saves==historySaves+2,"stop flushes latest price-check history");
+   runnerType.GetMethod("Stop")!.Invoke(runner,[Enum.Parse(state.PropertyType,"Stopped")]);
+   Check(Dummy.Saves==historySaves+2,"unchanged stop does not save history again");
+   history.WorldHistory[realWorld.RowId]=new(){LastCheckedUtc=time,LastPurchasedUtc=time.AddMinutes(1)};
+   var historyRoundtrip=System.Text.Json.JsonSerializer.Deserialize<Configuration>(System.Text.Json.JsonSerializer.Serialize(Dummy.Config))!;
+   Check(!historyRoundtrip.Lists[0].SkipRecentWorlds && historyRoundtrip.Lists[0].WorldHistory[realWorld.RowId].LastCheckedUtc==time,
+       "per-list exclusion off and price history persist");
+   foreach(var code in codes) {
+    Dummy.Config.Language=code;
+    for(int frame=0;frame<2;frame++) {
+     ImGui.NewFrame(); ImGui.SetNextWindowSize(new(520,730)); ImGui.Begin("World history QA");
+     using(var font=Dummy.Push()) {
+      // Open the production history section with the same stable ID.
+      ImGui.GetStateStorage().SetInt(ImGui.GetID((string)texts.GetMethod("Get")!.Invoke(null,["WorldHistory",code])!+"###WorldHistory"),1);
+      type.GetMethod("DrawListOptions",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,[history]);
+     }
+     ImGui.End(); ImGui.Render();
+    }
+    Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,code+"-world-history.bmp"));
+    Check(ImGui.GetDrawData().TotalVtxCount>0,"world history renders "+code);
+   }
   }
   Check(Dummy.Subscriptions==0,"Unsubscribes events"); Check(Dummy.Commands.Count==0,"Removes command");
   ImGui.DestroyContext(); foreach(var pin in Dummy.Pins) pin.Free();
-  Console.WriteLine($"PASS {checks} UI/glyph/lifecycle checks; 39 background renders.");
+  Console.WriteLine($"PASS {checks} UI/glyph/lifecycle checks; 46 background renders.");
  }
 }
 public unsafe class Dummy:DispatchProxy
@@ -245,6 +310,9 @@ public unsafe class Dummy:DispatchProxy
  public static uint ActiveAetheryte;
  public static int TravelRequests;
  public static object?[]? TravelArgs;
+ public static bool TravelBusy, TeleportAccepted=true, AlignCamera, NavBusy, StopFailure;
+ public static int TeleportRequests, CameraWrites, MoveRequests, PathFailure;
+ public static object?[]? TeleportArgs;
  public static IDisposable Push() { ImGui.PushFont(Fonts[0]); return new Pop(); }
  protected override object? Invoke(MethodInfo? method,object?[]? args)
  {
@@ -259,12 +327,23 @@ public unsafe class Dummy:DispatchProxy
    case "GetIpcSubscriber":
     var ipc=DispatchProxy.Create(method.ReturnType,typeof(Dummy)); ((Dummy)ipc).ipcName=(string)args![0]!; return ipc;
    case "InvokeFunc":
-    if(ipcName=="Lifestream.IsBusy") return false;
+    if(ipcName=="Lifestream.IsBusy") return TravelBusy;
     if(ipcName=="Lifestream.GetActiveAetheryte") return ActiveAetheryte;
     if(ipcName=="Lifestream.GetWorldChangeAetheryteByTerritoryType") return (int?)1;
+    if(ipcName=="Lifestream.Teleport") { TeleportRequests++; TeleportArgs=args; return TeleportAccepted; }
+    if(ipcName=="vnavmesh.Path.IsRunning") return NavBusy;
+    if(ipcName=="vnavmesh.Path.GetAlignCamera") return AlignCamera;
+    if(ipcName=="vnavmesh.Nav.PathfindCancelable") {
+     if(PathFailure==1) throw new InvalidOperationException("Path refused");
+     if(PathFailure==2) return Task.FromException<List<System.Numerics.Vector3>>(new InvalidOperationException("Path failed"));
+     return Task.FromResult(PathFailure==3 ? new List<System.Numerics.Vector3>() : new List<System.Numerics.Vector3>{new(1,0,0)});
+    }
     break;
    case "InvokeAction":
     if(ipcName=="Lifestream.TPAndChangeWorld") { TravelRequests++; TravelArgs=args; }
+    if(ipcName=="vnavmesh.Path.SetAlignCamera") { AlignCamera=(bool)args![0]!; CameraWrites++; }
+    if(ipcName=="vnavmesh.Path.MoveTo") MoveRequests++;
+    if(ipcName=="vnavmesh.Path.Stop" && StopFailure) throw new InvalidOperationException("Stop failed");
     return null;
    case "GetExcelSheet": return typeof(GameData).GetMethods().First(x=>x.Name=="GetExcelSheet" && x.IsGenericMethod).MakeGenericMethod(method.GetGenericArguments()).Invoke(Game,[null,null]);
    case "get_InstalledPlugins": return Array.CreateInstance(method.ReturnType.GetGenericArguments()[0],0);

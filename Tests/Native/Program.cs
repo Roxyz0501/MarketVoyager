@@ -5,6 +5,8 @@ using System.Runtime.InteropServices;
 using InteropGenerator.Runtime;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Client.UI.Info;
+using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using NativeObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 unsafe class Program
 {
@@ -14,6 +16,11 @@ unsafe class Program
     static bool savedBeforeClick, correctInput;
     static int focuses;
     static nint focusedNode;
+    static int interactions;
+    static bool sightCheck;
+    [UnmanagedCallersOnly]
+    static ulong Interact(TargetSystem* self, NativeObject* board, byte checkSight)
+    { interactions++; sightCheck=checkSight!=0; return 1; }
     [UnmanagedCallersOnly]
     static byte Focus(AtkUnitBase* owner, AtkResNode* node, byte cursor, uint param)
     { focuses++; focusedNode = (nint)node; return 1; }
@@ -143,6 +150,15 @@ unsafe class Program
         Check(MarketReadiness.Ready(0, 0, false, false, false), "Completed empty search");
         Check(!MarketReadiness.Ready(101, 101, false, false, false), "Native buffer bound");
         Check(!MarketReadiness.Ready(1, -1, false, false, false), "Invalid UI count");
+        TargetSystem.Addresses.InteractWithObject.Value = (nint)(delegate* unmanaged<TargetSystem*, NativeObject*, byte, ulong>)&Interact;
+        TargetSystem targets = default; NativeObject board = default; board.Position = new(1,0,0);
+        Check(NativeMarket.InteractNearby(&targets,&board,new(0,0,0),true) && interactions==1 && !sightCheck,
+            "nearby board uses ordinary object handler without foreground/camera visibility check");
+        Check(!NativeMarket.InteractNearby(&targets,&board,new(4,0,0),true) && interactions==1,"distant board never interacted with");
+        Check(!NativeMarket.InteractNearby(&targets,&board,new(0,0,0),false) && interactions==1,"untargetable board rejected");
+        Check(!NativeMarket.InteractNearby(null,&board,new(0,0,0),true) && interactions==1,"missing target system rejected");
+        Check(!NativeMarket.InteractNearby(&targets,null,new(0,0,0),true) && interactions==1,"missing board rejected");
+        Check(!NativeMarket.InteractNearby(&targets,&board,new(float.NaN,0,0),true) && interactions==1,"invalid position rejected");
         Console.WriteLine($"PASS {checks} native search/event/readiness regressions; no game process, input or packets.");
     }
 }

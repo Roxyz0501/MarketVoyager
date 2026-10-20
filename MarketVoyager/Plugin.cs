@@ -24,6 +24,7 @@ public sealed partial class Plugin : IDalamudPlugin
     private readonly IFontHandle font;
     private readonly Item[] items;
     private readonly Dictionary<uint, Item> itemById;
+    private readonly Dictionary<uint, string> worldNames;
     private readonly IMarketBoard.ItemPurchasedDelegate purchased;
     private bool open;
     private DateTime? saveAt;
@@ -49,6 +50,7 @@ public sealed partial class Plugin : IDalamudPlugin
         yesAlready = pi.GetOrCreateData<HashSet<string>>("YesAlready.StopRequests", () => []);
         items = data.GetExcelSheet<Item>().Where(x => x.ItemSearchCategory.RowId != 0).ToArray();
         itemById = items.ToDictionary(x => x.RowId);
+        worldNames = data.GetExcelSheet<World>().Where(x => x.IsPublic).ToDictionary(x => x.RowId, x => x.Name.ToString());
         catalogue = items.Select(x => new CatalogItem(x.RowId, x.Name.ToString(), x.ItemSearchCategory.RowId,
             x.ItemSearchCategory.Value.Name.ToString(), x.PriceLow, x.LevelItem.RowId, x.CanBeHq)).ToArray();
         catalogueById = catalogue.ToDictionary(x => x.Id);

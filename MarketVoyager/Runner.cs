@@ -8,7 +8,7 @@ using NativeObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace MarketVoyager;
 
-internal enum Phase { Idle, WalkToAetheryte, Travel, Walk, Open, Search, Select, Listings, Confirm, Result, SellWalk, SellOpen, SellPick, SellMenu, SellResult, Done, Stopped, Error }
+internal enum Phase { Idle, StartTeleport, WalkToAetheryte, Travel, Walk, Open, Search, Select, Listings, Confirm, Result, SellWalk, SellOpen, SellPick, SellMenu, SellResult, Done, Stopped, Error }
 
 internal sealed unsafe class Runner(Configuration config, Travel travel, NativeMarket market,
     NativeSales sales, IDataManager data, IObjectTable objects, IPlayerState player, IClientState client,
@@ -16,6 +16,9 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
 {
     private readonly Queue<(uint Id, string Name)> worlds = new();
     private readonly HashSet<ulong> attempted = [];
+    private readonly HashSet<(Guid List, uint World)> visitedThisRun = [];
+    private bool historyDirty;
+    private DateTimeOffset nextHistorySave;
     private List<BuyRule> rules = [];
     private int index;
     private ShoppingList activeList = new();
@@ -25,11 +28,12 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     private (uint Id, string Name) world;
     private ulong character;
     private ulong boardId;
-    private const float BoardInteractionDistance = 2f;
+    private const float BoardInteractionDistance = NativeMarket.BoardDistance;
     private int boardOpenAttempts;
     private DateTime nextBoardInteraction;
     private uint sourceWorld;
     private bool evaluated;
+    private bool priceCheckRecorded;
     public int? OfferCount { get; private set; }
     public int CandidateCount { get; private set; }
     public uint EvaluatedItem { get; private set; }
@@ -67,7 +71,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         next = DateTime.UtcNow;
     }
     public Phase State { get; private set; }
-    public bool Running => State is >= Phase.WalkToAetheryte and <= Phase.SellResult;
+    public bool Running => State is >= Phase.StartTeleport and <= Phase.SellResult;
     public string CurrentWorld => world.Name ?? "";
     public uint CurrentItem => index < rules.Count ? rules[index].ItemId : 0;
 
@@ -78,28 +82,61 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         OfferCount = null; CandidateCount = 0; EvaluatedItem = 0;
         try
         {
-            if (config.Pending != null || config.PendingSale != null || !travel.Ready || travel.Busy || !client.IsLoggedIn || client.TerritoryType != 129 || player.ContentId == 0)
-                throw new InvalidOperationException("Start requires Limsa Lower Decks, available dependencies and no unresolved purchase");
+            if (config.Pending != null || config.PendingSale != null || !travel.Ready || travel.Busy || !client.IsLoggedIn || player.ContentId == 0)
+                throw new InvalidOperationException("Start requires a logged-in character, available dependencies and no unresolved purchase");
             if (market.Visible("SelectYesno") || market.Visible("InputNumeric") || market.Visible("ContextMenu") || market.Visible("Shop") || market.Visible("ItemSearch")) throw new InvalidOperationException("Close existing dialogs first");
-            var aether = objects.Where(x => x.ObjectKind == ObjectKind.Aetheryte && x.BaseId == 8).FirstOrDefault();
-            if (aether == null || objects.LocalPlayer == null || Vector3.Distance(objects.LocalPlayer.Position, aether.Position) > 25)
-                throw new InvalidOperationException("Start beside the Limsa main aetheryte");
             skipSaleUntilPurchase = false;
             LoadRules();
             if (rules.Count == 0) throw new InvalidOperationException("Empty shopping list");
-            save();
+            SaveChanges();
             character = player.ContentId;
+            visitedThisRun.Clear();
             worlds.Clear();
             var current = player.CurrentWorld.RowId;
             // Single bounded world-sheet pass per run; dependency advertises visitability.
             var region = player.CurrentWorld.Value.DataCenter.Value.Region;
-            foreach (var w in data.GetExcelSheet<World>().Where(w => w.IsPublic && w.DataCenter.Value.Region.Equals(region))
-                .OrderBy(w => w.RowId == current ? 0 : 1).ThenBy(w => w.RowId))
-                if (w.RowId == current || travel.CanVisit(w.Name.ToString())) worlds.Enqueue((w.RowId, w.Name.ToString()));
-            NextWorld();
+            var candidates = data.GetExcelSheet<World>()
+                .Where(w => w.IsPublic && w.DataCenter.Value.Region.Equals(region))
+                .Select(w => new TourWorld(w.RowId, w.Name.ToString(), w.DataCenter.RowId));
+            foreach (var w in WorldTour.Order(candidates, current, player.CurrentWorld.Value.DataCenter.RowId))
+                if (w.Id == current || travel.CanVisit(w.Name)) worlds.Enqueue((w.Id, w.Name));
+            if (worlds.All(w => WorldTour.Excluded(activeList, w.Id, DateTimeOffset.UtcNow))) { Stop(Phase.Done); return; }
+            if (!NearStart())
+            {
+                sourceWorld = current;
+                if (!travel.TeleportToLimsa()) throw new InvalidOperationException("Limsa teleport rejected");
+                Set(Phase.StartTeleport, 120);
+            }
+            else NextWorld();
         }
         catch (Exception ex) { Fail(ex); }
     }
+
+    private bool NearStart()
+    {
+        if (client.TerritoryType != 129 || objects.LocalPlayer == null || objects.LocalPlayer.IsCasting) return false;
+        var aether = objects.FirstOrDefault(x => x.ObjectKind == ObjectKind.Aetheryte && x.BaseId == 8 && x.IsTargetable);
+        return aether != null && Vector3.Distance(objects.LocalPlayer.Position, aether.Position) <= 25;
+    }
+
+    private void RecordPriceCheck()
+    {
+        bool first = visitedThisRun.Add((activeList.Id, world.Id));
+        var now = DateTimeOffset.UtcNow;
+        WorldTour.Record(activeList, world.Id, now);
+        historyDirty = true;
+        // Persist first proof immediately; coalesce later checks into transactions,
+        // world departure/stop, or at most one history-only save per 30 seconds.
+        if (first || now >= nextHistorySave) SaveChanges();
+    }
+
+    private void SaveChanges()
+    {
+        save();
+        historyDirty = false;
+        nextHistorySave = DateTimeOffset.UtcNow.AddSeconds(30);
+    }
+    private void FlushHistory() { if (historyDirty) SaveChanges(); }
 
     private void LoadRules()
     {
@@ -127,17 +164,24 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         foreach (var rule in updated)
             if (!qualities[rule.ItemId] && rule.Quality != Quality.Nq) { rule.Quality = Quality.Nq; normalized = true; }
         activeList = selected; rules = updated;
-        if (normalized) save();
+        if (normalized) SaveChanges();
     }
 
     private void Set(Phase phase, int seconds = 30)
     {
+        if (phase == Phase.Search) priceCheckRecorded = false;
         State = phase; deadline = DateTime.UtcNow.AddSeconds(seconds);
         next = DateTime.UtcNow.AddMilliseconds(phase is >= Phase.Search and <= Phase.Result ? config.PurchaseDelayMs : 1000);
     }
     private void NextWorld()
     {
-        if (rules.All(x => x.Purchased >= x.QuantityLimit) || !worlds.TryDequeue(out world)) { Stop(Phase.Done); return; }
+        FlushHistory();
+        if (rules.All(x => x.Purchased >= x.QuantityLimit)) { Stop(Phase.Done); return; }
+        // Evaluate at departure, so a paused list's on/off edits apply to remaining worlds.
+        do
+        {
+            if (!worlds.TryDequeue(out world)) { Stop(Phase.Done); return; }
+        } while (WorldTour.Excluded(activeList, world.Id, DateTimeOffset.UtcNow));
         index = 0; listingRetries = 0; attempted.Clear();
         market.CloseMarket();
         if (player.CurrentWorld.RowId != world.Id)
@@ -163,7 +207,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         if (board == null || Vector3.Distance(board.Position, aether.Position) > 150 || !travel.MeshReady)
             throw new InvalidOperationException("Nearest market board or navmesh unavailable");
         boardId = board.GameObjectId;
-        if (objects.LocalPlayer == null || !travel.Move(objects.LocalPlayer.Position, board.Position)) throw new InvalidOperationException("Path request rejected");
+        if (objects.LocalPlayer == null || !travel.Move(objects.LocalPlayer.Position, board.Position, alignCamera: true)) throw new InvalidOperationException("Path request rejected");
         ownsMovement = true; Set(Phase.Walk, 120);
     }
     public void Tick()
@@ -214,12 +258,25 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                 throw new TimeoutException($"{State}: {market.Diagnostics()}");
             }
             if (!travel.Ready) throw new InvalidOperationException("Dependency unloaded");
+            if (State == Phase.StartTeleport)
+            {
+                if (client.IsLoggedIn && (player.ContentId != character || player.CurrentWorld.RowId != sourceWorld))
+                    throw new InvalidOperationException("Character or world changed during startup teleport");
+                if (client.IsLoggedIn && !travel.Busy && NearStart() && travel.MeshReady) NextWorld();
+                return;
+            }
             if (restartAfterResume)
             {
                 if (!client.IsLoggedIn || player.ContentId != character || client.TerritoryType != 129 ||
                     player.CurrentWorld.RowId != (State == Phase.WalkToAetheryte ? sourceWorld : world.Id))
                     throw new InvalidOperationException("Character or location changed while paused");
                 restartAfterResume = false;
+                if (!visitedThisRun.Contains((activeList.Id, world.Id)) &&
+                    WorldTour.Excluded(activeList, world.Id, DateTimeOffset.UtcNow))
+                {
+                    if (State == Phase.SellPick) sales.Close();
+                    NextWorld(); return;
+                }
                 if (State == Phase.WalkToAetheryte) { /* Keep the already queued next world. */ }
                 else if (State == Phase.SellPick && activeList.AutoSell) { /* Resume selling against the edited list. */ }
                 else
@@ -253,7 +310,10 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                 throw new InvalidOperationException("Character, territory or world changed unexpectedly");
             if (State == Phase.Walk)
             {
-                travel.PollMove();
+                // Give the navigation provider an update to orient the camera before stopping,
+                // including when starting already close to the board.
+                if (travel.PollMove()) { next = DateTime.UtcNow.AddMilliseconds(500); return; }
+                if (travel.PathPending) return;
                 var board = objects.FirstOrDefault(x => x.GameObjectId == boardId);
                 if (board == null || objects.LocalPlayer == null) throw new InvalidOperationException("Board disappeared");
                 if (Vector3.Distance(objects.LocalPlayer.Position, board.Position) > BoardInteractionDistance) return;
@@ -273,7 +333,10 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                 if (!board.IsTargetable || Vector3.Distance(objects.LocalPlayer.Position, board.Position) > BoardInteractionDistance) return;
                 boardOpenAttempts++;
                 nextBoardInteraction = DateTime.UtcNow.AddSeconds(2);
-                TargetSystem.Instance()->InteractWithObject((NativeObject*)board.Address);
+                // Same ordinary object-interaction handler as a target interaction.
+                // Proximity and targetability above guard access; do not depend on rendered
+                // camera visibility (including when the game window is in the background).
+                NativeMarket.InteractNearby(TargetSystem.Instance(), (NativeObject*)board.Address, objects.LocalPlayer.Position, board.IsTargetable);
                 return;
             }
             if (State >= Phase.SellWalk) { TickSale(); return; }
@@ -293,28 +356,28 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                     if (market.ResultsOpenFor(rule.ItemId) || market.SelectItem(rule.ItemId)) Set(Phase.Listings);
                     break;
                 case Phase.Listings:
-                    if (!market.ListingsReady(rule.ItemId)) break;
+                    if (!market.TryRead(rule.ItemId, character, out var available)) break;
+                    if (!priceCheckRecorded) { RecordPriceCheck(); priceCheckRecorded = true; }
                     if (config.Pending != null)
                     {
                         if (ReconcileInventory()) break;
-                        if (!market.Read(rule.ItemId, character).Contains(offer))
+                        if (!available.Contains(offer))
                             throw new InvalidOperationException("Original listing unavailable; purchase outcome remains unresolved");
                         if (pause.Requested)
                         {
                             // Refreshed unchanged listing and inventory establish that this attempt did not complete.
                             // Pause before retrying the purchase.
-                            config.Pending = null; attempted.Remove(offer.Id); save(); Set(Phase.Search); break;
+                            config.Pending = null; attempted.Remove(offer.Id); SaveChanges(); Set(Phase.Search); break;
                         }
                         if (NativeSales.FreeSlots() == 0 && activeList.AutoSell)
                         {
                             // A fresh listing still exists and inventory is unchanged: no purchase was completed.
-                            config.Pending = null; attempted.Remove(offer.Id); save();
+                            config.Pending = null; attempted.Remove(offer.Id); SaveChanges();
                             BeginSale(); break;
                         }
                         if (!market.SelectOffer(offer, character)) throw new InvalidOperationException("Retry listing changed");
                         Set(Phase.Confirm, 15); break;
                     }
-                    var available = market.Read(rule.ItemId, character);
                     var options = available.Where(x => !attempted.Contains(x.Id) && Rules.Eligible(rule, x, item.CanBeHq))
                         .OrderBy(x => x.Price).ThenBy(x => x.Total).ThenBy(x => x.Id).ToList();
                     OfferCount = available.Count; CandidateCount = options.Count; EvaluatedItem = rule.ItemId;
@@ -329,11 +392,11 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                     if (InventoryManager.Instance() == null || offer.Total > InventoryManager.Instance()->GetGil())
                         throw new InvalidOperationException("Insufficient gil");
                     // Persist the reservation BEFORE any purchase interaction. Never blindly retry.
-                    config.Pending = new() { RuleId = rule.Id, ListingId = offer.Id, ItemId = offer.Item,
+                    config.Pending = new() { ListId = activeList.Id, RuleId = rule.Id, ListingId = offer.Id, ItemId = offer.Item,
                         Quantity = offer.Quantity, WorldId = world.Id, CharacterId = character, Hq = offer.Hq,
                         InventoryBefore = InventoryManager.Instance()->GetInventoryItemCount(offer.Item, offer.Hq, false, false), Submitted = false };
                     retries = 0;
-                    if (!market.SelectOffer(offer, character, save))
+                    if (!market.SelectOffer(offer, character, SaveChanges))
                     {
                         // SelectOffer returned before dispatching an event, so nothing was purchased.
                         config.Pending = null; next = DateTime.UtcNow.AddSeconds(1); break;
@@ -349,7 +412,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                     State = Phase.Result;
                     var action = market.Confirm(offer, item.Name.ToString(), () => {
                         if (config.Pending == null) throw new InvalidOperationException("Missing purchase reservation");
-                        config.Pending.Submitted = true; save();
+                        config.Pending.Submitted = true; SaveChanges();
                     });
                     if (action == 2) { if (State == Phase.Result) Set(Phase.Result, 20); }
                     else { State = Phase.Confirm; next = DateTime.UtcNow.AddMilliseconds(action == 1 ? Math.Max(250, config.PurchaseDelayMs) : config.PurchaseDelayMs); }
@@ -375,8 +438,10 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         if (outcome == Rules.InventoryResult.Unchanged) return false;
         if (outcome == Rules.InventoryResult.Inconsistent) throw new InvalidOperationException("Inventory changed unexpectedly; cannot reconcile purchase");
         Sales.Credit(rules[index], pending.CharacterId, pending.Hq, pending.Quantity);
+        WorldTour.RecordPurchase(config.Lists, pending, DateTimeOffset.UtcNow);
+        priceCheckRecorded = false;
         skipSaleUntilPurchase = false;
-        config.Pending = null; save(); Set(market.Visible("ItemSearchResult") ? Phase.Listings : Phase.Search);
+        config.Pending = null; SaveChanges(); Set(market.Visible("ItemSearchResult") ? Phase.Listings : Phase.Search);
         return true;
     }
     public bool ResolveStoppedPurchase(bool confirmedNotPurchased, bool countUnresolved)
@@ -388,7 +453,9 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         if (rule == null) return false;
         int count = InventoryManager.Instance()->GetInventoryItemCount(pending.ItemId, pending.Hq, false, false);
         if (!PurchaseRecovery.Resolve(rule, pending, count, market.Visible("SelectYesno"), confirmedNotPurchased, countUnresolved)) return false;
-        config.Pending = null; config.PruneDetached(); save(); return true;
+        if (Rules.Reconcile(pending.InventoryBefore, count, pending.Quantity) == Rules.InventoryResult.Purchased)
+            WorldTour.RecordPurchase(config.Lists, pending, DateTimeOffset.UtcNow);
+        config.Pending = null; config.PruneDetached(); SaveChanges(); return true;
     }
     private bool CheckSpace()
     {
@@ -443,7 +510,7 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                         throw new InvalidOperationException("No eligible acquired stack could free an inventory slot");
                     BeginWalk(); return;
                 }
-                config.PendingSale = candidate; save();
+                config.PendingSale = candidate; SaveChanges();
                 sales.OpenMenu(candidate); Set(Phase.SellMenu, 15); break;
             case Phase.SellMenu:
                 if (config.PendingSale == null) throw new InvalidOperationException("Missing sale reservation");
@@ -453,13 +520,13 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
                 var pending = config.PendingSale ?? throw new InvalidOperationException("Missing sale reservation");
                 var manager = InventoryManager.Instance();
                 if (manager == null) throw new InvalidOperationException("Inventory unavailable");
-                if (pending.ExpectedGil == 0 && sales.ReadPrice(pending)) save();
+                if (pending.ExpectedGil == 0 && sales.ReadPrice(pending)) SaveChanges();
                 var outcome = Sales.Reconcile(pending, manager->GetInventoryItemCount(pending.Item, pending.Hq, false, false), manager->GetGil());
                 if (outcome == Sales.Outcome.Inconsistent) throw new InvalidOperationException("Sale result inconsistent");
                 if (outcome == Sales.Outcome.Sold)
                 {
                     var rule = activeList.Items.Single(x => x.Id == pending.RuleId);
-                    Sales.Complete(rule, pending); config.PendingSale = null; save();
+                    Sales.Complete(rule, pending); config.PendingSale = null; SaveChanges();
                     Set(Phase.SellPick); return;
                 }
                 if (sales.Confirm(pending, data.GetExcelSheet<Item>().GetRow(pending.Item).Name.ToString()))
@@ -488,13 +555,14 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
             try
             {
                 if (market.CancelConfirmation(offer) && config.Pending is { } pending)
-                { pending.Cancelled = true; save(); }
+                { pending.Cancelled = true; SaveChanges(); }
             }
             catch (Exception ex) { log.Warning(ex, "Could not cancel unsubmitted purchase dialog"); }
         }
         try { if (ownsMovement) travel.StopMove(); } catch (Exception ex) { log.Warning(ex, "Stop movement failed"); }
         try { if (ownsTravel) travel.AbortTravel(); } catch (Exception ex) { log.Warning(ex, "Stop travel failed"); }
         ownsMovement = ownsTravel = false;
+        try { FlushHistory(); } catch (Exception ex) { log.Warning(ex, "Saving world history failed"); }
     }
 }
 

@@ -135,3 +135,44 @@ Check(!PurchaseRecovery.Resolve(recoveryRule,mismatched,15,false,false,false), "
 var migrated = System.Text.Json.JsonSerializer.Deserialize<Reservation>("{\"ItemId\":42,\"Quantity\":5}")!;
 Check(migrated.Submitted==null && !migrated.Cancelled,"old reservations retain unknown submission status");
 Console.WriteLine($"With stopped-purchase recovery: {checks} assertions passed.");
+
+var tourNow = new DateTimeOffset(2026, 10, 21, 9, 0, 0, TimeSpan.FromHours(9));
+var historyList = new ShoppingList();
+var independentList = new ShoppingList();
+Check(historyList.SkipRecentWorlds && !WorldTour.Excluded(historyList, 42, tourNow), "new list has no visits to exclude");
+WorldTour.Record(historyList, 42, tourNow);
+Check(historyList.WorldHistory[42].LastCheckedUtc.Offset == TimeSpan.Zero &&
+    historyList.WorldHistory[42].LastPurchasedUtc == null, "successful price check records UTC without inventing a purchase");
+Check(WorldTour.Excluded(historyList,42,tourNow.AddHours(6).AddTicks(-1)), "exclude until six-hour boundary");
+Check(!WorldTour.Excluded(historyList,42,tourNow.AddHours(6)), "exactly six hours is eligible");
+Check(!WorldTour.Excluded(independentList,42,tourNow), "history belongs only to its shopping list");
+historyList.SkipRecentWorlds=false;
+Check(!WorldTour.Excluded(historyList,42,tourNow), "list switch disables exclusion without clearing history");
+historyList.SkipRecentWorlds=true;
+Check(WorldTour.Excluded(historyList,42,tourNow), "turning exclusion on reuses saved history");
+WorldTour.Record(historyList,42,tourNow.AddMinutes(1));
+Check(historyList.WorldHistory.Count==1 && historyList.WorldHistory[42].LastCheckedUtc==tourNow.AddMinutes(1), "next item price check refreshes same world record");
+var historyRule = new BuyRule {ItemId=42}; historyList.Items.Add(historyRule);
+var historicalPurchase = new Reservation {ListId=historyList.Id,RuleId=historyRule.Id,WorldId=42};
+WorldTour.RecordPurchase([historyList,independentList],historicalPurchase,tourNow.AddMinutes(2));
+Check(historyList.WorldHistory[42].LastPurchasedUtc==tourNow.AddMinutes(2) &&
+    historyList.WorldHistory[42].LastCheckedUtc==tourNow.AddMinutes(1), "confirmed purchase has separate timestamp and does not extend price cooldown");
+historyList.Items.Clear();
+WorldTour.RecordPurchase([historyList,independentList],historicalPurchase,tourNow.AddMinutes(3));
+Check(historyList.WorldHistory[42].LastPurchasedUtc==tourNow.AddMinutes(3), "removed pending row resolves to original list by ID");
+WorldTour.RecordPurchase([independentList],historicalPurchase,tourNow);
+Check(independentList.WorldHistory.Count==0,"deleted list cannot write purchase history into a replacement");
+independentList.Items.Add(historyRule); historicalPurchase.ListId=Guid.Empty;
+WorldTour.RecordPurchase([independentList],historicalPurchase,tourNow);
+Check(independentList.WorldHistory[42].LastPurchasedUtc==tourNow &&
+    !WorldTour.Excluded(independentList,42,tourNow), "legacy purchase resolves by rule but does not invent price check");
+var historySaved=System.Text.Json.JsonSerializer.Deserialize<ShoppingList>(System.Text.Json.JsonSerializer.Serialize(historyList))!;
+Check(historySaved.Id==historyList.Id && historySaved.WorldHistory[42].LastCheckedUtc==tourNow.AddMinutes(1) && historySaved.SkipRecentWorlds,"history and list option survive restart");
+var historyLegacy=System.Text.Json.JsonSerializer.Deserialize<ShoppingList>("{\"Name\":\"Old\",\"Items\":[]}")!;
+Check(historyLegacy.Id!=Guid.Empty && historyLegacy.WorldHistory.Count==0 && historyLegacy.SkipRecentWorlds,"existing lists migrate with no false recent visits");
+var tourWorlds=new TourWorld[]{new(1,"A",2),new(9,"B",3),new(7,"C",2),new(4,"D",1),new(8,"E",3)};
+Check(WorldTour.Order(tourWorlds,9,3).Select(x=>x.Id).SequenceEqual(new uint[]{9,8,4,1,7}), "current DC first, current world first, all worlds in each DC contiguous");
+Check(WorldTour.Order(tourWorlds,0,9).Select(x=>x.Id).SequenceEqual(new uint[]{4,1,7,8,9}),"DC grouping remains stable when current world not in route");
+for(uint i=1;i<=600;i++) WorldTour.Record(historyLegacy,i,tourNow.AddMinutes(i));
+Check(historyLegacy.WorldHistory.Count==512 && !historyLegacy.WorldHistory.ContainsKey(1) && historyLegacy.WorldHistory.ContainsKey(600),"history has bounded capacity and evicts oldest check");
+Console.WriteLine($"With world tour history: {checks} assertions passed.");

@@ -3,11 +3,24 @@ using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Client.UI.Info;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using NativeObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
+using System.Numerics;
 
 namespace MarketVoyager;
 
 internal sealed unsafe class NativeMarket(IGameGui gui)
 {
+    internal const float BoardDistance = 2f;
+    internal static bool InteractNearby(TargetSystem* targets, NativeObject* board, Vector3 playerPosition, bool targetable)
+    {
+        if (targets == null || board == null || !targetable ||
+            !float.IsFinite(Vector3.DistanceSquared(playerPosition, board->Position)) ||
+            Vector3.DistanceSquared(playerPosition, board->Position) > BoardDistance * BoardDistance) return false;
+        // Ordinary object interaction, independent of rendered camera visibility.
+        targets->InteractWithObject(board, checkLineOfSight: false);
+        return true;
+    }
     private nint notifiedInput;
     private string notifiedText = "";
     public bool Visible(string name) { var a = gui.GetAddonByName<AtkUnitBase>(name); return a != null && a->IsVisible && a->IsReady; }
@@ -103,15 +116,20 @@ internal sealed unsafe class NativeMarket(IGameGui gui)
         item != 0 && agent != null && proxy != null && agent->ResultItemId == item && proxy->SearchItemId == item;
     public List<Offer> Read(uint item, ulong owner)
     {
-        List<Offer> offers = [];
-        if (!ListingsReady(item)) return offers;
+        TryRead(item, owner, out var offers);
+        return offers;
+    }
+    public bool TryRead(uint item, ulong owner, out List<Offer> offers)
+    {
+        offers = [];
+        if (!ListingsReady(item)) return false;
         for (int i = 0; i < Math.Min(Proxy->ListingCount, 100); i++)
         {
             var row = Proxy->Listings[i];
             if (row.ItemId != item || row.ContentId == owner || row.IsMannequin || row.IsSellingAsSet) continue;
             offers.Add(new(row.ListingId, row.ItemId, row.UnitPrice, row.Quantity, row.TotalTax, row.IsHqItem));
         }
-        return offers;
+        return true;
     }
     public bool SelectOffer(Offer offer, ulong owner, Action? beforeSelection = null)
     {
