@@ -1,5 +1,17 @@
 # Market Voyager publication state
 
+## 2026-10-21 — Market Voyager 1.0.1.5 closer market access and faster purchasing
+
+- Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.5
+- ZIP: https://github.com/Roxyz0501/MarketVoyager/releases/download/v1.0.1.5/MarketVoyager-1.0.1.5.zip
+- Source/tag: `849d2393503c7123d7b09beae18db782f2dcf186`.
+- ZIP: 507,988 bytes; SHA-256 `2713D96F7BA13DDE30E9FD6C53DCF15B31CE6D87F58AEC12633F0A1D99820339`; eight allowlisted files.
+- Stop within 2m instead of 3m; settle one second and attempt ordinary market interaction up to three times at two-second intervals without renewing the Open timeout.
+- Purchase-stage checks/transitions use 100ms; checkbox updates wait 250ms. Removed fixed two-second post-purchase delay. Receipts only wake reconciliation; the exact inventory increase must be observed before the reservation clears, and the next action waits for the purchase dialog to close. No change to normal UI routes, caps, persistence or bounded error retries.
+- Clean Release zero warnings/errors; 943 core assertions, 542 native checks, 929 UI/glyph/lifecycle checks and 39 background renders. Scheduler timeout and early-receipt regressions passed. Canonical tabs and source/UTF-8/UTF-16 package scans passed.
+- Public repository/icon HTTP 200 (image/png); anonymous ZIP hash and manifest matched. Shared index commit `d39ce50c70cd3319099706165237f8304edc5c9e`, connector, main raw and pinned raw verified 1.0.1.5; 12 other entries preserved.
+- Published under standing authorization. Connector used for source/index/records; CLI only for unsupported Release/assets and local history sync. No installed DLL replacement or game input. Actual game position and throughput remain unverified; timing values describe scheduling, not measured purchases per second.
+
 ## 2026-10-20 — Market Voyager 1.0.1.4 listing eligibility and walking return
 
 - Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.4
