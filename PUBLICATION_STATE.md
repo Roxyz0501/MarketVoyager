@@ -1,5 +1,17 @@
 # Market Voyager publication state
 
+## 2026-10-20 — Market Voyager 1.0.1.2 search startup fix
+
+- Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.2
+- ZIP: https://github.com/Roxyz0501/MarketVoyager/releases/download/v1.0.1.2/MarketVoyager-1.0.1.2.zip
+- Source/tag: `21840366bae4c505501551f9a0cd1779e87d9e68`.
+- ZIP: 500,575 bytes; SHA-256 `11D0900CB8F5B682446EA96422DC6F60EC58AAC7B3EBD39B2C896A1FE8F978A2`; eight allowlisted files.
+- Removed the Normal-only gate before name entry; input update precedes the ordinary registered search-button click. Button event lookup skips hover/press and other listeners. Complete matching listings no longer wait on a stale WaitingForListings flag; incomplete/loading UI remains blocked. Reopening the same item preserves the retry budget. Bounded, non-personal diagnostic logging added.
+- Clean Release: zero warnings/errors; 931 core assertions, 520 native-layout search/event/readiness regressions, 812 UI/lifecycle/retry checks and 31 background renders. Canonical tabs and source/binary scans passed.
+- Public repo/icon HTTP 200 (image/png); anonymously downloaded ZIP hash matched. Shared index commit `164683b44a9161e237d77718d212ded779693ff6` and connector verified 1.0.1.2 with all 12 other entries preserved. A concurrent index update was reread and retained. Main raw URL initially served cached 1.0.1.1; pinned URL served 1.0.1.2.
+- Published under standing user authorization. Connector used for source/index/records; CLI only for unsupported Release/assets and local Git synchronization. No installed DLL replacement or game input. The reported live state could not be inspected because no game process was present; actual in-game fix confirmation remains outstanding.
+
+
 ## 2026-10-20 — Market Voyager 1.0.1.1 registered-list bulk editing
 
 - Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.1
