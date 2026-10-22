@@ -48,15 +48,15 @@ public sealed partial class Plugin
         config.Selected = Math.Clamp(config.Selected > index ? config.Selected - 1 : config.Selected, 0, config.Lists.Count - 1);
         selectedRules.Clear(); rulePage = 0; batchMessage = null;
         confirmListDelete = openBatch = openNpcBatch = false;
-        saveAt = null; Save();
+        Save();
     }
     private void DrawTransport()
     {
-        ImGui.BeginDisabled(runner.Running || config.Pending != null || config.PendingSale != null || !travel.Ready || config.Lists[config.Selected].Items.Count == 0);
-        if (ImGui.Button("\u25B6 " + T("Run") + "###Run")) runner.Start();
+        ImGui.BeginDisabled(persistence.Blocked || runner.Running || config.Pending != null || config.PendingSale != null || !travel.Ready || config.Lists[config.Selected].Items.Count == 0);
+        if (ImGui.Button("\u25B6 " + T("Run") + "###Run")) StartRun();
         ImGui.EndDisabled(); ImGui.SameLine();
         ImGui.BeginDisabled(!runner.Running);
-        if (ImGui.Button((runner.PauseRequested ? "\u25B6 " + T("Resume") : "\u2016 " + T("Pause")) + "###Pause")) runner.TogglePause();
+        if (ImGui.Button((runner.PauseRequested ? "\u25B6 " + T("Resume") : "\u2016 " + T("Pause")) + "###Pause")) ToggleRunPause();
         ImGui.SameLine(); if (ImGui.Button("\u25A0 " + T("Stop") + "###Stop")) runner.Stop();
         ImGui.EndDisabled(); ImGui.SameLine();
         ImGui.TextWrapped(T(runner.IsPaused ? "Paused" : runner.PauseRequested ? "Pausing" : runner.State.ToString()));
@@ -258,12 +258,12 @@ public sealed partial class Plugin
             if (ImGui.MenuItem(T("BatchEdit"))) { ImGui.CloseCurrentPopup(); openBatch = true; }
             if (ImGui.MenuItem(T("SetNpc"))) { ImGui.CloseCurrentPopup(); openNpcBatch = true; }
             ImGui.BeginDisabled(selectedRules.Any(LedgerLocked));
-            if (ImGui.MenuItem(T("ResetSelected"))) { if (Catalog.Reset(list, selectedRules) > 0) Save(); }
+            if (ImGui.MenuItem(T("ResetSelected"))) { if (Catalog.Reset(list, selectedRules) > 0) TrySaveSafety(); }
             ImGui.EndDisabled();
             if (ImGui.MenuItem(T("RemoveSelected"))) RemoveRows(list, selectedRules.ToHashSet());
             ImGui.EndDisabled(); ImGui.Separator();
             ImGui.BeginDisabled(list.Items.Any(x => LedgerLocked(x.Id)));
-            if (ImGui.MenuItem(T("Reset"))) { if (Catalog.Reset(list, list.Items.Select(x => x.Id).ToHashSet()) > 0) Save(); }
+            if (ImGui.MenuItem(T("Reset"))) { if (Catalog.Reset(list, list.Items.Select(x => x.Id).ToHashSet()) > 0) TrySaveSafety(); }
             ImGui.EndDisabled();
             ImGui.EndPopup();
         }
@@ -355,7 +355,7 @@ public sealed partial class Plugin
                     }
                     ImGui.Separator();
                     ImGui.BeginDisabled(LedgerLocked(rule.Id));
-                    if (ImGui.MenuItem(T("Reset"))) { if (Catalog.Reset(list, new HashSet<Guid> { rule.Id }) > 0) Save(); }
+                    if (ImGui.MenuItem(T("Reset"))) { if (Catalog.Reset(list, new HashSet<Guid> { rule.Id }) > 0) TrySaveSafety(); }
                     ImGui.EndDisabled();
                     if (ImGui.MenuItem(T("Remove"))) remove = rule.Id;
                     ImGui.EndPopup();

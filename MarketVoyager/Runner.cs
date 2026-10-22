@@ -12,13 +12,11 @@ internal enum Phase { Idle, StartTeleport, WalkToAetheryte, Travel, Walk, Open, 
 
 internal sealed unsafe class Runner(Configuration config, Travel travel, NativeMarket market,
     NativeSales sales, IDataManager data, IObjectTable objects, IPlayerState player, IClientState client,
-    IPluginLog log, System.Action save)
+    IPluginLog log, System.Action save, System.Action? markChanged = null)
 {
     private readonly Queue<(uint Id, string Name)> worlds = new();
     private readonly HashSet<ulong> attempted = [];
     private readonly HashSet<(Guid List, uint World)> visitedThisRun = [];
-    private bool historyDirty;
-    private DateTimeOffset nextHistorySave;
     private List<BuyRule> rules = [];
     private int index;
     private ShoppingList activeList = new();
@@ -121,22 +119,12 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
 
     private void RecordPriceCheck()
     {
-        bool first = visitedThisRun.Add((activeList.Id, world.Id));
-        var now = DateTimeOffset.UtcNow;
-        WorldTour.Record(activeList, world.Id, now);
-        historyDirty = true;
-        // Persist first proof immediately; coalesce later checks into transactions,
-        // world departure/stop, or at most one history-only save per 30 seconds.
-        if (first || now >= nextHistorySave) SaveChanges();
+        visitedThisRun.Add((activeList.Id, world.Id));
+        WorldTour.Record(activeList, world.Id, DateTimeOffset.UtcNow);
+        markChanged?.Invoke();
     }
 
-    private void SaveChanges()
-    {
-        save();
-        historyDirty = false;
-        nextHistorySave = DateTimeOffset.UtcNow.AddSeconds(30);
-    }
-    private void FlushHistory() { if (historyDirty) SaveChanges(); }
+    private void SaveChanges() => save();
 
     private void LoadRules()
     {
@@ -175,7 +163,6 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
     }
     private void NextWorld()
     {
-        FlushHistory();
         if (rules.All(x => x.Purchased >= x.QuantityLimit)) { Stop(Phase.Done); return; }
         // Evaluate at departure, so a paused list's on/off edits apply to remaining worlds.
         do
@@ -562,7 +549,6 @@ internal sealed unsafe class Runner(Configuration config, Travel travel, NativeM
         try { if (ownsMovement) travel.StopMove(); } catch (Exception ex) { log.Warning(ex, "Stop movement failed"); }
         try { if (ownsTravel) travel.AbortTravel(); } catch (Exception ex) { log.Warning(ex, "Stop travel failed"); }
         ownsMovement = ownsTravel = false;
-        try { FlushHistory(); } catch (Exception ex) { log.Warning(ex, "Saving world history failed"); }
     }
 }
 

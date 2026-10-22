@@ -1,9 +1,9 @@
-Market Voyager 1.0.1.8 — price-check history and market approach
+Market Voyager 1.0.1.9 — bounded persistence and recovery
 
-- リスト設定に「6時間以内に価格確認したワールドを除外」を追加。リストごとにオン・オフ可能（初期オン）。正常な価格取得で更新し、購入なし・出品なしも対象。移動だけ・画面を開くだけ・取得失敗は対象外。
-- ワールドごとの最終価格確認と、所持品で確認できた最終購入を別々に記録。6時間経過後は再訪可能。履歴は除外オフでも保持。
-- 現在のDCから、DCごとにまとめて巡回。開始位置がリムサのメインエーテライト付近でなければLifestreamでテレポして開始。巡回中のエーテライトへの帰路は徒歩を維持。
-- マーケットへの移動中はvnavmeshでカメラを進行方向に合わせ、終了時に元の追従設定へ復元。2m以内のボードへのアクセスを、カメラの視線チェックに依存しない通常オブジェクト操作へ変更。OSの前面化・入力送信は使用しません。
-- 価格確認の保存は初回を即時保存し、その後は取引保存・移動前・停止時、または30秒ごとにまとめます。購入のUI経路・価格上限・所持数照合は維持。
+- 保存失敗後に毎フレーム再試行する問題を修正。通常保存の失敗時は同じスナップショットを別名へ一度だけ退避し、その保存先または両方失敗した旨を表示して自動再試行を停止します。
+- 通常設定は即時反映・60秒ごとの変更時保存へ。ログアウト・正常終了・無効化時に未保存分を保存。変更なし・値を元に戻した場合は書き込みません。
+- 購入予約・送信前・所持数照合の確定記録を別の耐久ファイルへ分離。保存失敗時は購入を止め、保存復旧後も自動再開しません。巡回開始・再開時はルールIDの参照整合性のため設定を先に確定します。
+- 正常な設定バックアップ3世代、破損復元、別名ファイルの次回起動時の検証・明示適用を追加。最新の購入済み数・未確認取引を古い設定バックアップで巻き戻しません。
+- 価格確認履歴は各リスト最大512ワールドの最新日時という上限付き形式を維持。旧設定・破損退避・復旧候補を自動削除しません。
 
-Validation: clean Release with zero warnings/errors; 960 core assertions, 548 native checks, 1074 UI/glyph/lifecycle checks and 46 background renders. Seven-language history UI, camera restoration/error paths, teleport IPC, bounded/coalesced history and ordinary interaction dispatch verified offline. Actual in-game navigation, teleport, camera and background-window behavior remain unverified; public preview.
+Validation: clean Release (0 warnings/errors), 960 core assertions, 548 native checks, 38 persistence checks, 1170 UI/glyph/lifecycle checks, 53 background renders. Synthetic normal fixture: 15 commits / 5,234 logical payload bytes; unchanged intervals and post-shutdown writes zero. Actual game transactions/logout and physical SSD writes are unverified. No live configuration migration or installed DLL replacement performed.

@@ -14,11 +14,12 @@ unsafe class Program
  {
   using var game = new GameData(Path.Combine(args[0],"sqpack")); Dummy.Game=game;
   string output=Path.GetFullPath(args[1]); Directory.CreateDirectory(output);
+  Dummy.StorageDirectory=Path.Combine(output,"persistence-"+Guid.NewGuid().ToString("N"));
   ImGui.CreateContext(); var io=ImGui.GetIO(); io.DisplaySize=new(1440,900); io.DeltaTime=1f/60; io.IniFilename=null;
   int checks=0; void Check(bool ok,string label) { checks++; if(!ok) throw new Exception(label); }
   using(var plugin = new Plugin(Stub<IDalamudPluginInterface>(),Stub<ICommandManager>(),Stub<IFramework>(),Stub<IMarketBoard>(),new DataStub(game),Stub<IGameGui>(),Stub<IObjectTable>(),Stub<IPlayerState>(),Stub<IClientState>(),Stub<IPluginLog>()))
   {
-   var type=typeof(Plugin); void Invoke(string name)=>type.GetMethod(name,BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,null);
+   var type=typeof(Plugin); Dummy.Storage=type.GetField("persistence",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(plugin); void Invoke(string name)=>type.GetMethod(name,BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,null);
    type.GetField("open",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(plugin,true);
    io.Fonts.Build();
    var texts=type.Assembly.GetType("MarketVoyager.Texts")!;
@@ -266,13 +267,16 @@ unsafe class Program
    var recordCheck=runnerType.GetMethod("RecordPriceCheck",BindingFlags.Instance|BindingFlags.NonPublic)!;
    int historySaves=Dummy.Saves;
    recordCheck.Invoke(runner,null);
-   Check(Dummy.Saves==historySaves+1 && history.WorldHistory.ContainsKey(realWorld.RowId),"first successful price check saves immediately");
+   Check(Dummy.Saves==historySaves && history.WorldHistory.ContainsKey(realWorld.RowId),"price check marks dirty without immediate write");
    for(int i=0;i<20;i++) recordCheck.Invoke(runner,null);
-   Check(Dummy.Saves==historySaves+1,"subsequent price checks coalesce without per-item disk writes");
+   Check(Dummy.Saves==historySaves,"subsequent price checks coalesce without per-item disk writes");
    runnerType.GetMethod("Stop")!.Invoke(runner,[Enum.Parse(state.PropertyType,"Stopped")]);
-   Check(Dummy.Saves==historySaves+2,"stop flushes latest price-check history");
+   Check(Dummy.Saves==historySaves,"tour stop does not bypass normal 60-second save cadence");
+   type.GetMethod("OnLogout",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,null);
+   Check(Dummy.Saves>historySaves,"logout flushes latest history and settings");
+   historySaves=Dummy.Saves;
    runnerType.GetMethod("Stop")!.Invoke(runner,[Enum.Parse(state.PropertyType,"Stopped")]);
-   Check(Dummy.Saves==historySaves+2,"unchanged stop does not save history again");
+   Check(Dummy.Saves==historySaves,"unchanged stop does not save history again");
    history.WorldHistory[realWorld.RowId]=new(){LastCheckedUtc=time,LastPurchasedUtc=time.AddMinutes(1)};
    var historyRoundtrip=System.Text.Json.JsonSerializer.Deserialize<Configuration>(System.Text.Json.JsonSerializer.Serialize(Dummy.Config))!;
    Check(!historyRoundtrip.Lists[0].SkipRecentWorlds && historyRoundtrip.Lists[0].WorldHistory[realWorld.RowId].LastCheckedUtc==time,
@@ -291,17 +295,42 @@ unsafe class Program
     Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,code+"-world-history.bmp"));
     Check(ImGui.GetDrawData().TotalVtxCount>0,"world history renders "+code);
    }
+   var storage=Dummy.Storage!; var storageType=storage.GetType();
+   storageType.GetProperty("Blocked")!.SetValue(storage,true);
+   storageType.GetProperty("Status")!.SetValue(storage,"SaveFailedFallback");
+   var openField=type.GetField("open",BindingFlags.Instance|BindingFlags.NonPublic)!;
+   openField.SetValue(plugin,false);
+   type.GetMethod("Update",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,[Stub<IFramework>()]);
+   Check((bool)openField.GetValue(plugin)!,"storage fault opens notification once");
+   openField.SetValue(plugin,false);
+   type.GetMethod("Update",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(plugin,[Stub<IFramework>()]);
+   Check(!(bool)openField.GetValue(plugin)!,"fault notification does not reopen every frame");
+   foreach(var code in codes) {
+    Dummy.Config.Language=code;
+    for(int frame=0;frame<2;frame++) {
+     ImGui.NewFrame();ImGui.SetNextWindowSize(new(850,500));ImGui.Begin("Persistence recovery QA");
+     using(var font=Dummy.Push()) Invoke("DrawPersistence");
+     ImGui.End();ImGui.Render();
+    }
+    Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,code+"-save-recovery.bmp"));
+    Check(ImGui.GetDrawData().TotalVtxCount>0,"save recovery renders "+code);
+   }
+   storageType.GetProperty("Blocked")!.SetValue(storage,false);
+   storageType.GetProperty("Status")!.SetValue(storage,"");
   }
   Check(Dummy.Subscriptions==0,"Unsubscribes events"); Check(Dummy.Commands.Count==0,"Removes command");
   ImGui.DestroyContext(); foreach(var pin in Dummy.Pins) pin.Free();
-  Console.WriteLine($"PASS {checks} UI/glyph/lifecycle checks; 46 background renders.");
+  Console.WriteLine($"PASS {checks} UI/glyph/lifecycle checks; 53 background renders.");
  }
 }
 public unsafe class Dummy:DispatchProxy
 {
  public static GameData Game=null!;
  public static Configuration Config=new(){Language="ja",Lists=[new(){Name="材料の購入",AutoSell=true,Items=[new(){ItemId=5333,UnitLimit=5000,QuantityLimit=20,Quality=Quality.Any},new(){ItemId=4,UnitLimit=1000,QuantityLimit=5,Quality=Quality.Hq}]}]};
- public static int Saves,Subscriptions;
+ public static int Subscriptions;
+ public static string StorageDirectory="";
+ public static object? Storage;
+ public static int Saves=>Storage==null?0:(int)(long)Storage.GetType().GetProperty("Writes")!.GetValue(Storage)!;
  public static readonly Dictionary<string,CommandInfo> Commands=[];
  public static readonly List<ImFontPtr> Fonts=[];
  public static readonly List<GCHandle> Pins=[];
@@ -321,7 +350,8 @@ public unsafe class Dummy:DispatchProxy
   if(method.Name.StartsWith("remove_")) { Subscriptions--; return null; }
   switch(method.Name) {
    case "GetPluginConfig": return Config;
-   case "SavePluginConfig": Saves++; return null;
+   case "SavePluginConfig": throw new Exception("Legacy immediate saving is forbidden");
+   case "GetPluginConfigDirectory": return StorageDirectory;
    case "get_UiLanguage": return "en";
    case "GetOrCreateData": return new HashSet<string>();
    case "GetIpcSubscriber":

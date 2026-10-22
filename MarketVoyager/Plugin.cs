@@ -27,7 +27,12 @@ public sealed partial class Plugin : IDalamudPlugin
     private readonly Dictionary<uint, string> worldNames;
     private readonly IMarketBoard.ItemPurchasedDelegate purchased;
     private bool open;
-    private DateTime? saveAt;
+    private readonly Persistence persistence;
+    private readonly IClientState client;
+    private readonly IClientState.LogoutDelegate logout;
+    private volatile bool disposed;
+    private readonly object receiptGate = new();
+    private bool storageFailureNotified;
     private readonly ConcurrentQueue<(uint Item, uint Quantity)> receipts = new();
 
     public Plugin(IDalamudPluginInterface pi, ICommandManager commands, IFramework framework,
@@ -36,7 +41,10 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         this.pi = pi; this.commands = commands; this.framework = framework;
         this.board = board; this.data = data; this.player = player;
-        config = pi.GetPluginConfig() as Configuration ?? new();
+        this.client = client;
+        persistence = new(pi.GetPluginConfigDirectory(), () => pi.GetPluginConfig() as Configuration ?? new(),
+            ex => log.Error(ex, "Market Voyager persistence stopped; explicit recovery required"));
+        config = persistence.Config;
         Texts.Validate();
         if (config.Lists.Count == 0) config.Lists.Add(new());
         config.Selected = Math.Clamp(config.Selected, 0, config.Lists.Count - 1);
@@ -46,7 +54,7 @@ public sealed partial class Plugin : IDalamudPlugin
         var resolved = Rules.ResolveLanguage(config.Language, game, pi.UiLanguage);
         if (config.Language != resolved) { config.Language = resolved; Save(); }
         travel = new(pi);
-        runner = new(config, travel, new NativeMarket(gui), new NativeSales(gui, data), data, objects, player, client, log, Save);
+        runner = new(config, travel, new NativeMarket(gui), new NativeSales(gui, data), data, objects, player, client, log, SaveSafety, Save);
         yesAlready = pi.GetOrCreateData<HashSet<string>>("YesAlready.StopRequests", () => []);
         items = data.GetExcelSheet<Item>().Where(x => x.ItemSearchCategory.RowId != 0).ToArray();
         itemById = items.ToDictionary(x => x.RowId);
@@ -66,20 +74,48 @@ public sealed partial class Plugin : IDalamudPlugin
         font = pi.UiBuilder.FontAtlas.NewDelegateFontHandle(step => step.OnPreBuild(tk =>
             tk.AddDalamudAssetFont(DalamudAsset.NotoSansCjkRegular, new SafeFontConfig { SizePx = 17, GlyphRanges = ranges })));
         commands.AddHandler("/marketvoyager", new CommandInfo((_, args) => { if (args.Trim() == "stop") runner.Stop(); else open = true; }) { HelpMessage = "Market Voyager" });
-        purchased = x => receipts.Enqueue((x.CatalogId, x.ItemQuantity));
+        purchased = x => { lock (receiptGate) { if (!disposed) receipts.Enqueue((x.CatalogId, x.ItemQuantity)); } };
         board.ItemPurchased += purchased;
+        logout = (_, _) => OnLogout();
+        client.Logout += logout;
         framework.Update += Update;
         pi.UiBuilder.Draw += Draw;
         pi.UiBuilder.OpenMainUi += Open;
         pi.UiBuilder.OpenConfigUi += Open;
     }
     private string T(string key) => Texts.Get(key, config.Language);
-    private void Save() => pi.SavePluginConfig(config);
-    private void ScheduleSave() => saveAt = DateTime.UtcNow.AddMilliseconds(600);
-    private void Open() => open = true;
-    private void Update(IFramework _)
+    private void Save() => persistence.Changed();
+    private void ScheduleSave() => Save();
+    private void SaveSafety() => persistence.Durable();
+    private void StartRun()
     {
-        if (saveAt is { } due && DateTime.UtcNow >= due) { Save(); saveAt = null; }
+        // Persist rule identities once before a tour can create reservations for them.
+        if (persistence.Flush()) runner.Start();
+    }
+    private void ToggleRunPause()
+    {
+        if (runner.IsPaused && !persistence.Flush()) return;
+        runner.TogglePause();
+    }
+    private void OnLogout()
+    {
+        if (disposed) return;
+        runner.Stop(); persistence.Flush();
+    }
+    private void Open() => open = true;
+    private void Update(IFramework frameworkUnused)
+    {
+        if (disposed) return;
+        persistence.Tick();
+        if (persistence.Blocked)
+        {
+            if (runner.Running) runner.Stop();
+            while (receipts.TryDequeue(out _)) { }
+            if (config.Pending != null || config.PendingSale != null) yesAlready.Add("MarketVoyager"); else yesAlready.Remove("MarketVoyager");
+            if (!storageFailureNotified) { open = true; storageFailureNotified = true; }
+            return;
+        }
+        storageFailureNotified = false;
         while (receipts.TryDequeue(out var receipt)) runner.Purchased(receipt.Item, receipt.Quantity);
         if (runner.Running || config.Pending != null || config.PendingSale != null) yesAlready.Add("MarketVoyager"); else yesAlready.Remove("MarketVoyager");
         runner.Tick();
@@ -92,12 +128,13 @@ public sealed partial class Plugin : IDalamudPlugin
         ImGui.SetNextWindowSizeConstraints(new(850, 500), new(float.MaxValue, float.MaxValue));
         if (ImGui.Begin("Market Voyager###MarketVoyager", ref open))
         {
+            DrawPersistence();
             DrawTransport();
             if (config.Pending is { } pending)
             {
                 ImGui.TextWrapped(T("Pending"));
                 ImGui.TextUnformatted($"{pending.ItemId} / {(pending.Hq ? "HQ" : "NQ")} / {pending.Quantity}");
-                if (!runner.Running && player.ContentId == pending.CharacterId)
+                if (!persistence.Blocked && !runner.Running && player.ContentId == pending.CharacterId)
                 {
                     ImGui.TextWrapped(T("RecoveryHelp"));
                     if (ImGui.Button(T("NotPurchased"))) runner.ResolveStoppedPurchase(true, false);
@@ -107,11 +144,11 @@ public sealed partial class Plugin : IDalamudPlugin
             if (config.PendingSale is { } sale)
             {
                 ImGui.TextWrapped(T("SalePending"));
-                if (!runner.Running && player.ContentId == sale.Character && ImGui.Button(T("CountSale")))
+                if (!persistence.Blocked && !runner.Running && player.ContentId == sale.Character && ImGui.Button(T("CountSale")))
                 {
                     var rule = config.FindRule(sale.RuleId);
                     if (rule != null) Sales.Complete(rule, sale);
-                    config.PendingSale = null; config.PruneDetached(); Save();
+                    config.PendingSale = null; config.PruneDetached(); TrySaveSafety();
                 }
             }
             if (ImGui.BeginTabBar("Tabs"))
@@ -143,12 +180,32 @@ public sealed partial class Plugin : IDalamudPlugin
             ImGui.TextUnformatted($"{dependency}: {T(travel.Loaded(dependency) ? "Loaded" : "Missing")}");
         ImGui.TextWrapped(T("Help")); ImGui.TextWrapped(T("RetryHelp"));
     }
+    private void TrySaveSafety()
+    {
+        try { SaveSafety(); } catch (IOException) { runner.Stop(); }
+    }
+    private void DrawPersistence()
+    {
+        if (persistence.Status.Length == 0) return;
+        ImGui.TextWrapped(T(persistence.Status));
+        if (persistence.Blocked) ImGui.TextWrapped(persistence.DirectoryPath);
+        if (persistence.RecoveryPath != null) ImGui.TextWrapped(persistence.RecoveryPath);
+        if (persistence.CanRetry && ImGui.Button(T("RetrySave") + "###RetrySave")) persistence.Retry();
+        if (persistence.Status == "RecoveryAvailable" && !persistence.Blocked && !runner.Running && persistence.RecoveryPath != null &&
+            ImGui.Button(T("RestoreCandidate") + "###RestoreCandidate"))
+        {
+            if (persistence.RestoreCandidate()) { selectedRules.Clear(); rulePage = 0; }
+        }
+    }
     public void Dispose()
     {
-        if (saveAt != null) Save();
+        if (disposed) return;
+        disposed = true;
         runner.Stop(); yesAlready.Remove("MarketVoyager");
         pi.UiBuilder.Draw -= Draw; pi.UiBuilder.OpenMainUi -= Open; pi.UiBuilder.OpenConfigUi -= Open;
-        framework.Update -= Update; board.ItemPurchased -= purchased;
-        commands.RemoveHandler("/marketvoyager"); font.Dispose();
+        framework.Update -= Update; board.ItemPurchased -= purchased; client.Logout -= logout;
+        commands.RemoveHandler("/marketvoyager");
+        lock (receiptGate) { while (receipts.TryDequeue(out _)) { } }
+        persistence.Dispose(); font.Dispose();
     }
 }
