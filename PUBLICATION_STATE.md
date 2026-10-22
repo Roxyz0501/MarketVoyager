@@ -1,5 +1,19 @@
 # Market Voyager publication state
 
+## 2026-10-22 — Market Voyager 1.0.1.9 persistence safeguards
+
+- Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.9
+- ZIP: https://github.com/Roxyz0501/MarketVoyager/releases/download/v1.0.1.9/MarketVoyager-1.0.1.9.zip
+- Source/tag: `b1b5006dd1c9d05082d4ed296c1de6298558ae98`.
+- ZIP: 533,402 bytes; SHA-256 `1BF1D910B4E926A9CD0115832A3A4E4C58BA0CECE78FFB67175324542B5E9A30`; nine allowlisted files including PERSISTENCE_NOTES.md.
+- Replaced per-frame failure retry and direct UI saves with one 60-second changed-only scheduler, logout/Dispose flush, atomic verified replacement and three valid settings backups. Ordinary edits remain deferred during purchase checkpoints; start/resume flush rule definitions once for referential integrity.
+- Separated settings from durable current purchase/sale state, counts, membership and bounded latest-world timestamps. Safety failure blocks buying; corrupted settings backups cannot lower current counts or resurrect deleted rules. No automatic purchase replay after recovery.
+- On failure, one alternate-name copy of captured data is attempted; both outcomes and the saved path are shown. Automatic retries stop, including at exit. Explicit retry uses current memory; next-start recovery candidates are validated and offered for explicit settings recovery while retaining current safety state.
+- Existing world history is bounded latest-state data (512 worlds per list), not a growing event log. No daily event files or empty HistoryFiles tab added; policy applicability documented locally. Shared specifications/templates were not edited.
+- Clean Release zero warnings/errors; 960 core assertions, 548 native checks, 38 persistence fault/lifecycle checks, 1170 UI/glyph/lifecycle checks and 53 renders. Normal synthetic scenario: 15 committed file payloads / 5,234 logical bytes; unchanged intervals and post-dispose writes zero. Actual locks, simulated write/rename/disk-full failures, 10,000 stopped retry frames, recovery, concurrent saves and edit-during-save verified. Canonical tabs and source/package scans passed.
+- Public repository/icon HTTP 200 (image/png), anonymous ZIP hash/metadata verified. Shared index `65012db5f46e38ab842a195e951d59c87ada8957`, connector and main/pinned raw verified 1.0.1.9; 12 other entries preserved.
+- Published under the chat's standing authorization; the audit handoff itself supplied implementation authorization only. Connector used for supported source/index/record actions, CLI for unsupported release/assets and local sync. No live configuration migration, installed DLL replacement or game input. Actual game logout/exit, dependency cancellation and transactions remain unverified; logical bytes are not physical SSD writes.
+
 ## 2026-10-21 — Market Voyager 1.0.1.8 price-check history and market approach
 
 - Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.8
