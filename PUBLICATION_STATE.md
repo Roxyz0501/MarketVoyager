@@ -1,3 +1,10 @@
+## 2026-11-23 — Market Voyager 1.0.1.10
+
+- Release: https://github.com/Roxyz0501/MarketVoyager/releases/tag/v1.0.1.10
+- Source/tag: d3359522d75aa70d522dbfc531d0cba72647975a. Shared canonical information tab, required Lifestream/vnavmesh definitions, seven-language labels and font coverage.
+- Release build passed; 960 core, 548 native, 38 persistence, 1186 UI checks passed. NuGet audit retrieval warning and native test reference warning documented in VALIDATION.md. Live installer interaction not tested.
+- Public repository/icon HTTP200; public ZIP 541709 bytes, SHA256 fb2926ed3018511ffe7599606ca3f77edefd730784b074000af966d6ed5945cd; manifest 1.0.1.10 verified. Shared index updated with fresh-content conflict retry; unrelated entries preserved.
+
 # Market Voyager publication state
 
 ## 2026-10-22 — Market Voyager 1.0.1.9 persistence safeguards
