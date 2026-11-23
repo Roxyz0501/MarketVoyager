@@ -24,6 +24,7 @@ unsafe class Program
    io.Fonts.Build();
    var texts=type.Assembly.GetType("MarketVoyager.Texts")!;
    string text=(string)texts.GetProperty("FontText",BindingFlags.Public|BindingFlags.Static)!.GetValue(null)!;
+   text += (string)type.GetField("DependencyFontText",BindingFlags.Static|BindingFlags.NonPublic)!.GetRawConstantValue()!;
    foreach(char c in text.Distinct().Where(c=>!char.IsControl(c))) Check(Dummy.Fonts[0].FindGlyphNoFallback(c)!=null,$"Missing glyph U+{(int)c:x4}");
    var textures=new Dictionary<ulong,(nint,int,int)>();
    for(int i=0;i<io.Fonts.Textures.Size;i++) { byte* pixels; int w=0,h=0,bpp=0; io.Fonts.GetTexDataAsRGBA32(i,&pixels,&w,&h,&bpp); io.Fonts.SetTexID(i,new ImTextureID((ulong)i+1)); textures[(ulong)i+1]=((nint)pixels,w,h); }
@@ -36,6 +37,8 @@ unsafe class Program
     Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,code+"-lists.bmp"));
     ImGui.NewFrame(); ImGui.SetNextWindowSize(new(850,650)); ImGui.Begin("Settings QA"); using(var font=Dummy.Push()) Invoke("DrawSettings"); ImGui.End(); ImGui.Render();
     Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,code+"-settings.bmp"));
+    ImGui.NewFrame(); ImGui.SetNextWindowSize(new(1100,650)); ImGui.Begin("Information QA"); using(var font=Dummy.Push()) Invoke("DrawDependencyInfo"); ImGui.End(); ImGui.Render();
+    Renderer.Render(ImGui.GetDrawData(),textures,Path.Combine(output,code+"-information.bmp"));
     foreach(var panel in new[]{"DrawCatalogue","DrawRegistered"}) {
      for(int frame=0;frame<2;frame++) {
       ImGui.NewFrame(); ImGui.SetNextWindowSize(new(1300,850)); ImGui.Begin(panel+" QA");

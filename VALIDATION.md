@@ -1,3 +1,7 @@
+# 1.0.1.10 — 2026-11-23
+
+Canonical information/tabs sources copied byte-identically. Two required dependencies match Travel.Ready; YesAlready is not a dependency. Seven-language information renders and glyph coverage passed (1186 UI checks), core 960, native 548, persistence 38. Release build passed. Test restore reported NU1900 (restricted NuGet connectivity); native fixture wildcard reports MSB3246. In-game installer clicks remain unverified. Information status reads local installed plugins only on first draw or explicit refresh; no added network or persistence writes. Existing settings retained.
+
 # Validation — 2026-10-22
 
 ## Measured offline results

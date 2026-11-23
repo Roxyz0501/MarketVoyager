@@ -69,7 +69,7 @@ public sealed partial class Plugin : IDalamudPlugin
             if (itemById.TryGetValue(rule.ItemId, out var item) && !item.CanBeHq && rule.Quality != Quality.Nq)
             { rule.Quality = Quality.Nq; normalized = true; }
         if (normalized) Save();
-        var ranges = (Texts.FontText + string.Concat(items.Select(x => x.Name.ToString())) + string.Concat(categories.Select(x => x.Name)) +
+        var ranges = (Texts.FontText + DependencyFontText + string.Concat(items.Select(x => x.Name.ToString())) + string.Concat(categories.Select(x => x.Name)) +
             string.Concat(StandardPluginTabs.Languages.Select(x => x.SelfName)) + "HQNQ0123456789Market VoyagerLifestreamvnavmeshKo-fiRoxyz0501").ToGlyphRange();
         font = pi.UiBuilder.FontAtlas.NewDelegateFontHandle(step => step.OnPreBuild(tk =>
             tk.AddDalamudAssetFont(DalamudAsset.NotoSansCjkRegular, new SafeFontConfig { SizePx = 17, GlyphRanges = ranges })));
@@ -158,7 +158,8 @@ public sealed partial class Plugin : IDalamudPlugin
                     T("Language"), () => {
                         var changed = StandardPluginTabs.DrawLanguageSelector(T("Language"), T("LanguageHelp"), config.Language!);
                         if (changed != null) { config.Language = changed; Save(); }
-                    }, T("Support"), () => StandardPluginTabs.DrawSupportContent(T("Support"), T("SupportHelp"), T("Recipient"), T("Donate")));
+                    }, T("Support"), () => StandardPluginTabs.DrawSupportContent(T("Support"), T("SupportHelp"), T("Recipient"), T("Donate")),
+                    StandardPluginInfo.Title(config.Language!), DrawDependencyInfo);
                 ImGui.EndTabBar();
             }
         }
